@@ -3,11 +3,11 @@ import os
 import stdpopsim
 import pickle
 import ray
-import time
 import argparse
 import matplotlib.pyplot as plt
 import torch
 import pickle
+import time
 
 from matplotlib.colors import Normalize
 from torch import Tensor
@@ -15,7 +15,7 @@ from cxt.config import BroadModelConfig
 import cxt.utils as utils
 import cxt.inference as inference
 
-from model_rescaling import scale_model, scale_growth_rates
+from model_rescaling import scale_model
 
 TokenFreeDecoderConfig = BroadModelConfig
 
@@ -65,11 +65,12 @@ def stochastic_bias_correction(
 
 # --- impl
 
+
 parser = argparse.ArgumentParser(
     "Calculate bias in cxt along a grid of model scaling parameters. The "
     "first is a scaling of the transition rate matrix for the coalescent with "
     "recombination (for a non-recombining locus, equivalent to scaling the mutation rate) "
-    "and the second is a scaling of exponential growth rates."
+    "and the second is direct scaling of the mutation rate."
 )
 parser.add_argument(
     "--random-seed", help="Global random seed", 
@@ -97,7 +98,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--output-path", help="Where to save plots", type=str, 
-    default="/sietch_colab/data_share/cxt/experiments/bias-coalscale-popgrowth/",
+    default="/sietch_colab/data_share/cxt/experiments/bias-coalscale-mutrate/",
 )
 parser.add_argument(
     "--model-path", help="Lightning checkpoint to load model from", type=str,
@@ -126,28 +127,28 @@ num_diploids = 25
 species = stdpopsim.get_species("HomSap")
 base_contig = species.get_contig("chr1")
 fold_change = np.linspace(-1, 1, args.grid_size + 1)
-mut_rate = base_contig.mutation_rate
 rec_rate = base_contig.recombination_map.mean_rate
-base_m = 1
-base_r = 1
-m_grid = 2 ** fold_change * base_m
-r_grid = 2 ** fold_change * base_r
+base_x = 1
+base_y = base_contig.mutation_rate
+x_grid = 2 ** fold_change * base_x
+y_grid = 2 ** fold_change * base_y
 parameter_grid = np.array([
-    (m, r) 
-    for m in (m_grid[1:] + m_grid[:-1]) / 2 
-    for r in (r_grid[1:] + r_grid[:-1]) / 2
+    (x, y) 
+    for x in (x_grid[1:] + x_grid[:-1]) / 2 
+    for y in (y_grid[1:] + y_grid[:-1]) / 2
 ])
 
 @ray.remote
-def simulate_parallel(seed, model_scale, growth_scale):
+def simulate_parallel(seed, model_scale, mut_rate):
     demogr = species.get_demographic_model(demography)
-    demogr = scale_model(scale_growth_rates(demogr, growth_scale), model_scale)
+    demogr = scale_model(demogr, model_scale)
     contig = species.get_contig(length=1e6, mutation_rate=mut_rate, recombination_rate=rec_rate)
     sample = {demogr.populations[0].name: num_diploids}
     engine = stdpopsim.get_engine("msprime")
     div = 0.0
     attempts = 0
-    while div == 0.0:  # rejection sample
+    while div == 0.0:  
+        # rejection sample so there is at least one mutation
         ts = engine.simulate(
             contig=contig, 
             samples=sample, 
@@ -166,7 +167,7 @@ def simulate_parallel(seed, model_scale, growth_scale):
     summary_stats = [
         div,
         ts_pivot.num_trees,
-        *true_tmrca,
+        *true_tmrca
     ]
     args = (ts, 0, 1, 0.0, False)   # (TreeSequence, pivot_A, pivot_B, offset, ignore_target)
     observed, target = utils.process_pair(args) 
@@ -198,16 +199,14 @@ if not os.path.exists(cache_file) or args.overwrite_cache:
         print(f"Running rep {rep}", flush=True)
         seed_array = rng.integers(2 ** 32 - 1, size=parameter_grid.shape[0])
         job_list = [
-            simulate_parallel.remote(s, m, r) 
-            for s, (m, r) in zip(seed_array, parameter_grid)
+            simulate_parallel.remote(s, x, y) 
+            for s, (x, y) in zip(seed_array, parameter_grid)
         ]
         src, tgt, stats = zip(*ray.get(job_list))
         src = np.stack(src)
         tgt = np.stack(tgt)
         stats = np.stack(stats)
     
-        #sequence = inference.generate(model, Tensor(src).to(device), B=src.shape[0], device=device)
-        #ypred, ytrue = inference.post_process(Tensor(tgt).to(torch.int32), sequence, utils.TIMES)
         ypred = []
         start = time.time()
         for _ in range(args.num_samples):
@@ -216,19 +215,19 @@ if not os.path.exists(cache_file) or args.overwrite_cache:
             ypred.append(yp)
         print(f"{time.time() - start} seconds")
         ypred = np.stack(ypred)
-    
-        # correction
-        mut_rate_vec = np.full(stats.shape[0], mut_rate)
-        seq_length = np.full_like(mut_rate_vec, 1e6)
-        mut_count = stats[:, 0]
-        ycorr = stochastic_bias_correction(mut_rate_vec, seq_length, mut_count, ypred, rng)
 
         # trim off the last window, as this frequently contains wild outliers
         ypred = ypred[..., :-1]
+    
+        # correction
+        mut_rate = parameter_grid[:, 1]
+        seq_length = np.full_like(mut_rate, 1e6)
+        mut_count = stats[:, 0]
+        ycorr = stochastic_bias_correction(mut_rate, seq_length, mut_count, ypred, rng)
 
         ypred = np.mean(ypred, axis=0)
         ycorr = np.mean(ycorr, axis=0)
-        ytrue = np.log(stats[:, 2:-1]) # non-discretized TMRCA
+        ytrue = np.log(stats[:, 2:-1]) # non-discretized TMRCA, omitting last window
     
         bias += np.mean(ypred - ytrue, axis=1)
         bias_corr += np.mean(ycorr - ytrue, axis=1)
@@ -277,52 +276,51 @@ fig, axs = plt.subplots(
 vbound = max(np.abs(bias).max(), np.abs(bias_corr).max())
 axs[0, 0].set_title("Bias")
 img = axs[0, 0].pcolormesh(
-    m_grid, r_grid,
+    x_grid, y_grid,
     bias.reshape(args.grid_size, args.grid_size).T,
     cmap=plt.get_cmap("seismic"),
     norm=Normalize(vmin=-vbound, vmax=vbound),
 )
-axs[0, 0].plot(base_m, base_r, "o", markersize=4, c="green")
+axs[0, 0].plot(base_x, base_y, "o", markersize=4, c="green")
 axs[0, 0].set_xscale('log', base=2)
 axs[0, 0].set_yscale('log', base=2)
 plt.colorbar(img, ax=axs[0, 0], label="bias (logspace)")
 img = axs[1, 0].pcolormesh(
-    m_grid, r_grid,
+    x_grid, y_grid,
     bias_corr.reshape(args.grid_size, args.grid_size).T,
     cmap=plt.get_cmap("seismic"),
     norm=Normalize(vmin=-vbound, vmax=vbound),
 )
-axs[1, 0].plot(base_m, base_r, "o", markersize=4, c="green")
+axs[1, 0].plot(base_x, base_y, "o", markersize=4, c="green")
 axs[1, 0].set_xscale('log', base=2)
 axs[1, 0].set_yscale('log', base=2)
 plt.colorbar(img, ax=axs[1, 0], label="bias after correction (logspace)")
-
 # MSE
 vmax = max(rmse.max(), rmse_corr.max())
 vmin = max(rmse.min(), rmse_corr.min())
 axs[0, 1].set_title("MSE")
 img = axs[0, 1].pcolormesh(
-    m_grid, r_grid,
+    x_grid, y_grid,
     rmse.reshape(args.grid_size, args.grid_size).T,
     cmap=plt.get_cmap("magma"),
     norm=Normalize(vmin=vmin, vmax=vmax),
 )
-axs[0, 1].plot(base_m, base_r, "o", markersize=4, c="green")
+axs[0, 1].plot(base_x, base_y, "o", markersize=4, c="green")
 axs[0, 1].set_xscale('log', base=2)
 axs[0, 1].set_yscale('log', base=2)
 plt.colorbar(img, ax=axs[0, 1], label="MSE (logspace)")
 img = axs[1, 1].pcolormesh(
-    m_grid, r_grid,
+    x_grid, y_grid,
     rmse_corr.reshape(args.grid_size, args.grid_size).T,
     cmap=plt.get_cmap("magma"),
     norm=Normalize(vmin=vmin, vmax=vmax),
 )
-axs[1, 1].plot(base_m, base_r, "o", markersize=4, c="green")
+axs[1, 1].plot(base_x, base_y, "o", markersize=4, c="green")
 axs[1, 1].set_xscale('log', base=2)
 axs[1, 1].set_yscale('log', base=2)
 plt.colorbar(img, ax=axs[1, 1], label="MSE after correction (log)")
 fig.supxlabel("Coalescent scaling")
-fig.supylabel("Growth rate scaling")
+fig.supylabel("Mutation rate")
 plt.savefig(f"{args.output_path}/bias-and-rmse.png")
 plt.clf()
 
@@ -332,16 +330,16 @@ fig, axs = plt.subplots(
     constrained_layout=True, squeeze=False,
 )
 img = axs[0, 0].pcolormesh(
-    m_grid, r_grid,
+    x_grid, y_grid,
     statistics[:, 0].reshape(args.grid_size, args.grid_size).T,
     cmap=plt.get_cmap("plasma"),
 )
 axs[0, 0].set_xscale('log', base=2)
 axs[0, 0].set_yscale('log', base=2)
-axs[0, 0].plot(base_m, base_r, "o", markersize=4, c="green")
+axs[0, 0].plot(base_x, base_y, "o", markersize=4, c="green")
 plt.colorbar(img, ax=axs[0, 0], label="# mutations")
 img = axs[1, 0].pcolormesh(
-    m_grid, r_grid,
+    x_grid, y_grid,
     statistics[:, 1].reshape(args.grid_size, args.grid_size).T,
     cmap=plt.get_cmap("plasma"),
     norm=Normalize(
@@ -351,11 +349,11 @@ img = axs[1, 0].pcolormesh(
 )
 axs[1, 0].set_xscale('log', base=2)
 axs[1, 0].set_yscale('log', base=2)
-axs[1, 0].plot(base_m, base_r, "o", markersize=4, c="green")
-plt.colorbar(img, ax=axs[1, 0], label="# recombinations")
+axs[1, 0].plot(base_x, base_y, "o", markersize=4, c="green")
+plt.colorbar(img, ax=axs[1, 0], label="# recombination")
 fig.suptitle("Summary stats sanity check")
 fig.supxlabel("Coalescent scaling")
-fig.supylabel("Growth rate scaling")
+fig.supylabel("Mutation rate")
 plt.savefig(f"{args.output_path}/summary-stats.png")
 plt.clf()
 

@@ -7,6 +7,7 @@ import argparse
 import matplotlib.pyplot as plt
 import torch
 import pickle
+import time
 
 from matplotlib.colors import Normalize
 from torch import Tensor
@@ -15,6 +16,52 @@ import cxt.utils as utils
 import cxt.inference as inference
 
 TokenFreeDecoderConfig = BroadModelConfig
+
+
+# --- lib
+
+def stochastic_bias_correction(
+    mutation_rate: np.ndarray,
+    sequence_length: np.ndarray,
+    mutation_count: np.ndarray,
+    predictions: np.ndarray,
+    rng: np.random.Generator = None,
+) -> (np.ndarray, np.ndarray):
+    r"""
+    Correct the predicted TMRCAs such that expected diversity matches
+    observed diversity, for a given mutation rate. This is done stochastically,
+    by using the fact that under the model,
+
+        mutation_count ~ Poisson(2 * correction * mu * \sum_i TMRCA_i * window_size_i)
+    
+    the posterior (given improper constant prior) is,
+
+        correction ~ Gamma(mutation_count + 1, 2 * mu * \sum_i TMRCA_i * window_size_i)
+
+    and sampling accordingly (e.g. iid for each TMRCA sample, pivot pair).
+    
+    The input predictions are assumed to have dimensions 
+    `(replicates, pairs, windows)`.
+    """
+    assert predictions.ndim == 3
+    assert mutation_count.ndim == 1
+    assert sequence_length.ndim == 1
+    assert mutation_rate.ndim == 1
+    assert mutation_count.size == predictions.shape[1]
+    assert sequence_length.size == predictions.shape[1]
+    assert mutation_rate.size == predictions.shape[1]
+    if rng is None: rng = np.random.default_rng()
+    corrected = []
+    for log_tmrca in predictions:
+        rate = 2 * np.exp(log_tmrca).mean(axis=-1) * \
+            mutation_rate * sequence_length
+        correction = rng.gamma(shape=mutation_count + 1, scale=1 / rate)
+        corrected.append(log_tmrca + np.log(correction)[:, np.newaxis])
+    corrected = np.stack(corrected)
+    return corrected
+
+
+# --- impl
 
 parser = argparse.ArgumentParser(
     "Calculate bias in cxt along a grid of recombination and mutation rates "
@@ -39,12 +86,16 @@ parser.add_argument(
     type=int, default=30,
 )
 parser.add_argument(
+    "--num-samples", help="Number of samples per sim",
+    type=int, default=10,
+)
+parser.add_argument(
     "--demography", help="Demographic model", 
     type=str, default="Zigzag_1S14",
 )
 parser.add_argument(
     "--output-path", help="Where to save plots", type=str, 
-    default="/home/natep/public_html/cxt/experiment-recomb-mutation/",
+    default="/sietch_colab/data_share/cxt/experiments/bias-recomb-mutation/",
 )
 parser.add_argument(
     "--model-path", help="Lightning checkpoint to load model from", type=str,
@@ -100,11 +151,17 @@ def simulate_parallel(seed, m, r):
         )
         pivot = [0, 1]
         ts_pivot = ts.simplify(samples=pivot) 
-        div = ts_pivot.diversity()
+        div = ts_pivot.diversity(span_normalise=False)
         attempts += 1
+    true_tmrca = ts_pivot.divergence(
+        sample_sets=[[0],[1]], 
+        windows=np.linspace(0, ts_pivot.sequence_length, 501),
+        mode='branch',
+    ) / 2
     summary_stats = [
-        ts_pivot.diversity(), 
-        np.mean(np.diff(ts_pivot.breakpoints(as_array=True))),
+        div, 
+        ts_pivot.num_trees,
+        *true_tmrca,
     ]
     args = (ts, 0, 1, 0.0, False)   # (TreeSequence, pivot_A, pivot_B, offset, ignore_target)
     observed, target = utils.process_pair(args) 
@@ -144,23 +201,33 @@ if not os.path.exists(cache_file) or args.overwrite_cache:
         tgt = np.stack(tgt)
         stats = np.stack(stats)
     
-        sequence = inference.generate(model, Tensor(src).to(device), B=src.shape[0], device=device)
-        ypred, ytrue = inference.post_process(Tensor(tgt).to(torch.int32), sequence, utils.TIMES)
+        ypred = []
+        start = time.time()
+        for _ in range(args.num_samples):
+            sequence = inference.generate(model, Tensor(src).to(device), B=src.shape[0], device=device)
+            yp, _ = inference.post_process(Tensor(tgt).to(torch.int32), sequence, utils.TIMES)
+            ypred.append(yp)
+        print(f"{time.time() - start} seconds")
+        ypred = np.stack(ypred)
     
         # correction
-        mut_rate = parameter_grid[:, 0]  # nonconstant across grid
-        obsv_div = stats[:, 0]
-        true_div = np.mean(2 * np.exp(ytrue), axis=1) * mut_rate
-        pred_div = np.mean(2 * np.exp(ypred), axis=1) * mut_rate
-        assert np.all(obsv_div > 0)
-        assert np.all(pred_div > 0)
-        ycorr = ypred + (np.log(obsv_div) - np.log(pred_div))[:, None]
+        mut_rate = parameter_grid[:, 0]
+        seq_length = np.full_like(mut_rate, 1e6)
+        mut_count = stats[:, 0]
+        ycorr = stochastic_bias_correction(mut_rate, seq_length, mut_count, ypred, rng)
+
+        # trim off the last window, as this frequently contains wild outliers
+        ypred = ypred[..., :-1]
+
+        ypred = np.mean(ypred, axis=0)
+        ycorr = np.mean(ycorr, axis=0)
+        ytrue = np.log(stats[:, 2:-1]) # non-discretized TMRCA
     
         bias += np.mean(ypred - ytrue, axis=1)
         bias_corr += np.mean(ycorr - ytrue, axis=1)
-        rmse += np.sqrt(np.mean((ypred - ytrue) ** 2, axis=1))
-        rmse_corr += np.sqrt(np.mean((ycorr - ytrue) ** 2, axis=1))
-        statistics += stats
+        rmse += np.mean((ypred - ytrue) ** 2, axis=1)
+        rmse_corr += np.mean((ycorr - ytrue) ** 2, axis=1)
+        statistics += stats[:, :2]
 
         ytrue_store.append(ytrue)
         ypred_store.append(ypred)
@@ -221,8 +288,8 @@ axs[1, 0].plot(base_m, base_r, "o", markersize=4, c="green")
 axs[1, 0].set_xscale('log', base=2)
 axs[1, 0].set_yscale('log', base=2)
 plt.colorbar(img, ax=axs[1, 0], label="bias after correction (logspace)")
-# RMSE
-axs[0, 1].set_title("RMSE")
+# MSE
+axs[0, 1].set_title("MSE")
 img = axs[0, 1].pcolormesh(
     m_grid, r_grid,
     rmse.reshape(args.grid_size, args.grid_size).T,
@@ -232,7 +299,7 @@ img = axs[0, 1].pcolormesh(
 axs[0, 1].plot(base_m, base_r, "o", markersize=4, c="green")
 axs[0, 1].set_xscale('log', base=2)
 axs[0, 1].set_yscale('log', base=2)
-plt.colorbar(img, ax=axs[0, 1], label="RMSE (logspace)")
+plt.colorbar(img, ax=axs[0, 1], label="MSE (logspace)")
 img = axs[1, 1].pcolormesh(
     m_grid, r_grid,
     rmse_corr.reshape(args.grid_size, args.grid_size).T,
@@ -242,7 +309,7 @@ img = axs[1, 1].pcolormesh(
 axs[1, 1].plot(base_m, base_r, "o", markersize=4, c="green")
 axs[1, 1].set_xscale('log', base=2)
 axs[1, 1].set_yscale('log', base=2)
-plt.colorbar(img, ax=axs[1, 1], label="RMSE after correction (log)")
+plt.colorbar(img, ax=axs[1, 1], label="MSE after correction (log)")
 fig.supxlabel("Mutation rate")
 fig.supylabel("Recombination rate")
 plt.savefig(f"{args.output_path}/bias-and-rmse.png")
@@ -261,7 +328,7 @@ img = axs[0, 0].pcolormesh(
 axs[0, 0].set_xscale('log', base=2)
 axs[0, 0].set_yscale('log', base=2)
 axs[0, 0].plot(base_m, base_r, "o", markersize=4, c="green")
-plt.colorbar(img, ax=axs[0, 0], label="Mean nucleotide diversity")
+plt.colorbar(img, ax=axs[0, 0], label="# mutations")
 img = axs[1, 0].pcolormesh(
     m_grid, r_grid,
     statistics[:, 1].reshape(args.grid_size, args.grid_size).T,
@@ -274,7 +341,7 @@ img = axs[1, 0].pcolormesh(
 axs[1, 0].set_xscale('log', base=2)
 axs[1, 0].set_yscale('log', base=2)
 axs[1, 0].plot(base_m, base_r, "o", markersize=4, c="green")
-plt.colorbar(img, ax=axs[1, 0], label="Mean breakpoint length")
+plt.colorbar(img, ax=axs[1, 0], label="# recombinations")
 fig.suptitle("Summary stats sanity check")
 fig.supxlabel("Mutation rate")
 fig.supylabel("Recombination rate")

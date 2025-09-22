@@ -1,2 +1,3 @@
+*.log
 cache.pkl
 __pycache__/
