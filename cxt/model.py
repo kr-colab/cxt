@@ -45,6 +45,51 @@ class TokenFreeDecoder(nn.Module):
             self.transformer.h[i].attn.cache_v = self.transformer.h[i].attn.cache_v.to(device)
 
     def forward(self, x, y, attn_mask, position=None, use_cache=False, calculate_loss=True):
+        # ---------------------------
+        # Decode / KV-cache path
+        # ---------------------------
+        if use_cache:
+            if position is None or position == 0:
+                src = self.transformer.bt2ls(x)              # [B, NW, D]
+            else:
+                src = self.transformer.ote(y).contiguous()   # [B, Ty_step, D] (usually 1)
+
+            for block in self.transformer.h:
+                src = block(src, attn_mask, use_cache=True, position=position)
+
+            src = self.transformer.ln_f(src)
+            logits = self.lm_head(src).contiguous()          # [B, T_in, V]; same as original
+            return logits
+
+        # ---------------------------
+        # Prefill / training path
+        # ---------------------------
+        B, Ty = y.size()          # Ty = 501  (BOS + 500)
+        NW     = x.shape[3]       # 500
+
+        x_enc = self.transformer.bt2ls(x)                    # [B, NW, D]
+        y_emb = self.transformer.ote(y)                      # [B, Ty, D]
+        src   = self.transformer.drop(torch.cat([x_enc, y_emb], dim=1))  # [B, NW+Ty, D]
+
+        for block in self.transformer.h:
+            src = block(src, attn_mask, use_cache=False)
+
+        src    = self.transformer.ln_f(src)
+        logits = self.lm_head(src)[:, NW:, :].contiguous()   # keep only target segment -> [B, Ty, V]
+
+        if not calculate_loss:
+            return logits                                    # [B, 501, V], identical to your original
+
+        # Train on 500 real targets: predict y[:,1:] using logits[:, :-1, :]
+        pred = logits[:, :-1, :].reshape(-1, logits.size(-1))  # [B*500, V]
+        tgt  = y[:, 1:].reshape(-1).long()                      # [B*500]
+        loss = F.cross_entropy(pred, tgt)
+        return logits, loss
+
+
+
+    """
+    def forward(self, x, y, attn_mask, position=None, use_cache=False, calculate_loss=True):
 
         if use_cache:
             if position == 0: src = self.transformer.bt2ls(x)   
@@ -82,12 +127,10 @@ class TokenFreeDecoder(nn.Module):
                                         tgt.reshape(-1))
                 return logits, loss
             else: return logits
-
+    """
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
-        # start with all of the candidate parameters
         param_dict = {pn: p for pn, p in self.named_parameters()}
-        # filter out those that do not require grad
         param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
         # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
         # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
@@ -101,7 +144,6 @@ class TokenFreeDecoder(nn.Module):
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
         print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
         print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
-        # Create AdamW optimizer and use the fused version if it is available
         fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == 'cuda'
         extra_args = dict(fused=True) if use_fused else dict()

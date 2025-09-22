@@ -26,7 +26,7 @@ config = {
         'min_lr': 3e-4 * 0.1,
         'warmup_iters': 10,
         'lr_decay_iters': 50_000 * 3,
-        'batch_size': 32,#196, 
+        'batch_size': 196,#196, #32
         'grad_accum_steps': 6,#1, 
         'weight_decay': 0.1,
         'betas': (0.9, 0.95),
@@ -127,25 +127,8 @@ if __name__ == "__main__":
         device: str = "cuda"
         batch_size: int = config['training']['batch_size']
 
-    # to be deleted
-    """
-    @dataclass
-    class TokenFreeDecoderConfig:
-        num_samples: int = 50
-        sample_scale_embd: int = 2
-        output_dim: int = 324+2
-        n_embd: int = 400 #768
-        combined_dim: int = 1001
-        n_layer: int = 6 #12
-        bias: bool = False
-        dropout: float = 0.1
-        n_head: int = 4 #8
-        device: str = "cuda"
-        batch_size: int = config['training']['batch_size']
-    """
-
     
-    # board model
+    # broad model
     @dataclass
     class TokenFreeDecoderConfig:
         num_samples: int = 50
@@ -161,22 +144,6 @@ if __name__ == "__main__":
         batch_size: int = config['training']['batch_size']
     
 
-    # to be deleted
-    """ 
-    @dataclass
-    class TokenFreeDecoderConfig:
-        num_samples: int = 50
-        sample_scale_embd: int = 3
-        output_dim: int = 324+2
-        n_embd: int = 600 
-        combined_dim: int = 1001
-        n_layer: int = 12
-        bias: bool = False
-        dropout: float = 0.1
-        n_head: int = 6
-        device: str = "cuda"
-        batch_size: int = config['training']['batch_size']
-    """
     
 
     # Check if dataset_path contains multiple subdirectories

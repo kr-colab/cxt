@@ -456,3 +456,33 @@ def stochastic_diversity_bias_correction(
     corrected = np.stack(corrected)
     intercept = np.stack(intercept)
     return corrected if not return_intercept else (corrected, intercept)
+
+
+def coalescence_rates(ancestor_times, time_windows, epsilon=1e-3):
+    """
+    Calculate pair coalescence rates given ancestor times in equal-sized windows.
+    """
+    assert np.all(np.diff(time_windows) > 0.0)
+    assert time_windows[0] == 0.0
+    assert ancestor_times.ndim == 1
+    assert ancestor_times.min() > 0.0
+    num_windows = time_windows.size - 1
+    idx = np.digitize(ancestor_times, time_windows) - 1
+    pdf = np.bincount(idx[idx < num_windows], minlength=num_windows)
+    pdf = pdf / ancestor_times.size
+    cdf = np.append(0, np.cumsum(pdf))
+    # for interior windows, use the CDF to get an estimate of the average rate.
+    # we have, rate(t) = pdf(t) / (1 - cdf(t)) so assuming a Poisson process,
+    # int_a^b rate(t) dt = -log(1 - (cdf(b) - cdf(a)) / (1 - cdf(a))) / (b - a)
+    # = log((1 - cdf(a)) / (1 - cdf(b))) / (b - a)
+    survival = np.append(1.0 - cdf, 0.0)
+    last = np.min(np.flatnonzero(survival < epsilon))
+    log_survival = np.log(survival[:last])
+    time_windows = time_windows[:last]
+    rates = (log_survival[:-1] - log_survival[1:]) / np.diff(time_windows)
+    if rates.size < num_windows:
+        # for terminal window (wherein last coalescence occurs) the estimator
+        # above isn't defined, so use the mean time to coalescence since the
+        # start of the last window
+        rates = np.append(rates, 1 / np.mean(ancestor_times[idx == last - 1] - time_windows[-1]))
+    return np.append(rates, [np.nan] * (num_windows - rates.size))
