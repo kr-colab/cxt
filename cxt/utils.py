@@ -486,3 +486,68 @@ def coalescence_rates(ancestor_times, time_windows, epsilon=1e-3):
         # start of the last window
         rates = np.append(rates, 1 / np.mean(ancestor_times[idx == last - 1] - time_windows[-1]))
     return np.append(rates, [np.nan] * (num_windows - rates.size))
+
+
+
+#from cxt.inference import load_model
+"""
+def setup_cxt_model(model_type='broad'):
+    if model_type == 'broad':
+        import sys
+        from cxt.config import BroadModelConfig
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        device = 'cpu'
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        model_path = '/home/kkor/cxt/cxt/lightning_logs/version_5/checkpoints/epoch=2-step=5649.ckpt'
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
+    elif model_type == 'narrow':
+        pass
+"""
+
+def setup_cxt_model(model_type: str = "broad"):
+    """
+    Build a CPU model using lazy imports (spawn-safe).
+    Keeps your existing behavior/paths intact.
+    """
+    if model_type == "broad":
+        import sys, importlib
+
+        # Lazy import to avoid top-level cycles
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+
+        # replicate your original setup
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        #model_path = "/home/kkor/cxt/cxt/lightning_logs/version_5/checkpoints/epoch=2-step=5649.ckpt"
+        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch=1-step=5280.ckpt"
+
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
+
+    elif model_type == "narrow":
+        # extend here when you have a narrow config
+        raise NotImplementedError("setup_cxt_model('narrow') is not implemented yet.")
+
+
+
+
+def discretize(sequence, population_time):
+    indices = np.searchsorted(population_time, sequence, side="right") - 1
+    indices = np.clip(indices, 0, len(population_time) - 1)
+    return indices
+
+def discrete_ground_truth(ts, a, b, sequence_length=1e6, window_size=2000):
+    ytrue = np.log(interpolate_tmrcas(
+        ts.simplify(samples=[a, b]),
+        window_size=window_size, sequence_length=sequence_length
+    ))
+    ytrue = discretize(ytrue, TIMES)
+    return TIMES[ytrue]

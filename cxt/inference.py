@@ -80,6 +80,7 @@ def generate(model, src, B=20, device="cuda", clear_cache=True, use_ddp=False):
     elif clear_cache: model.clear_cache()
     return idx
 
+"""
 def load_model(config, model_path=None, device='cuda'):
     model = LitTokenFreeDecoder(config)
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
@@ -91,6 +92,31 @@ def load_model(config, model_path=None, device='cuda'):
     model.cache_to_device(device)
     model.eval()
     return model
+"""
+
+def load_model(config, model_path, device="cuda"):
+    """
+    Lazy loader to avoid circular imports during multiprocessing spawn.
+    Imports cxt.train only when called.
+    """
+    import importlib, torch
+    train_mod = importlib.import_module("cxt.train")     # lazy
+    LitTokenFreeDecoder = getattr(train_mod, "LitTokenFreeDecoder")
+
+    lit = LitTokenFreeDecoder(config)
+    ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
+    lit.load_state_dict(ckpt["state_dict"], strict=False)
+    model = lit.model
+    del lit, ckpt
+
+    model.to(device)
+    if hasattr(model, "cache_to_device"):
+        model.cache_to_device(device)
+    model.eval()
+    return model
+
+
+
 
 def prepare_ts_data(ts: object, num_samples: int, B: int, device='cuda', num_processes=50, offset=0, ignore_target=False) -> tuple:
     """

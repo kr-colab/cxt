@@ -1,3 +1,36 @@
+### deterministic ###
+import os, torch
+import traceback
+
+# cuBLAS determinism
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8" # ":16:8"  # or 
+
+# Torch deterministic mode
+torch.use_deterministic_algorithms(True, warn_only=False)
+
+# cuDNN / TF32 off for determinism
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+
+# Make SDPA deterministic (disable flash & mem-effic; force math)
+try:
+    torch.backends.cuda.enable_flash_sdp(False)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    torch.backends.cuda.enable_math_sdp(True)
+except Exception:
+    pass
+
+# Global seeds (covers any stray torch/np/random usage)
+import random, numpy as np
+BASE = 1234
+random.seed(BASE)
+np.random.seed(BASE)
+torch.manual_seed(BASE)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(BASE)
+
 # ============================================================
 # Multi-GPU pipeline + tqdm + MULTIPROCESS SOURCE BUILD
 # (same behavior as your working version, but memory-fixed)
@@ -36,11 +69,11 @@ def calculate_window_sfs_vectorized(
     return sfs_array
 
 
-def check_blocks(blocks):
-    for b in blocks:
-        assert isinstance(b, tuple) and len(b) == 2 and b[0] < b[1], \
-            "Each block must be a tuple (start, end) with start < end"
-        assert b[1] - b[0] == 1e6, "Each block must be 1e6 bp"
+#def check_blocks(blocks):
+#    for b in blocks:
+#        assert isinstance(b, tuple) and len(b) == 2 and b[0] < b[1], \
+#            "Each block must be a tuple (start, end) with start < end"
+#        assert b[1] - b[0] == 1e6, "Each block must be 1e6 bp"
 
 
 def basic_filtering(block_gm, block_positions):
@@ -61,8 +94,8 @@ def _build_one_src_task(task):
     Returns:
       (b_idx, p_idx, X)
     """
-    b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B = task
-    X = build_src(block_pos, block_gm, pivot_A, pivot_B)
+    b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size = task
+    X = build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size)
     return b_idx, p_idx, X
 
 
@@ -100,6 +133,52 @@ def _build_sources_serial(tasks, progress=True):
     for (b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B) in it:
         Xs.append(build_src(block_pos, block_gm, pivot_A, pivot_B))
     return np.stack(Xs, axis=0)
+
+def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length=1e6, step_size=2000):
+    # masks per site
+    xor_mask  = (block_gm[pivot_id_A] ^ block_gm[pivot_id_B]).astype(bool)
+    xnor_mask = ~xor_mask
+
+    # site frequencies among samples
+    freqs = block_gm.sum(0).astype(np.int32)
+
+    # SUBSET positions AND freqs consistently
+    pos_xor,  freqs_xor  = block_positions[xor_mask],  freqs[xor_mask]
+    pos_xnor, freqs_xnor = block_positions[xnor_mask], freqs[xnor_mask]
+
+    # helper that tolerates empty sets
+    def sfs_for(pos, f, win_mult):
+        if pos.size == 0:
+            return np.zeros((int(np.ceil(1e6/2000)), 50), dtype=np.int32)
+        return calculate_window_sfs_vectorized(
+            positions=pos.astype(np.float32),
+            pivot_frequencies=f.astype(np.int32),
+            window_size=step_size * win_mult,
+            sequence_length=sequence_length,
+            num_samples=50,
+            step_size=step_size,
+        )
+
+    w_multipliers = (2, 8, 32, 64)
+    n_w = int(np.ceil(sequence_length/step_size))  # 500
+    Xs_xor  = np.zeros((len(w_multipliers), n_w, 50), dtype=np.int32)
+    Xs_xnor = np.zeros((len(w_multipliers), n_w, 50), dtype=np.int32)
+
+    for i, w in enumerate(w_multipliers):
+        Xs_xor[i]  = sfs_for(pos_xor,  freqs_xor,  w)
+        Xs_xnor[i] = sfs_for(pos_xnor, freqs_xnor, w)
+
+    X = np.stack([Xs_xor, Xs_xnor], axis=0).astype(np.float16)
+    return np.log1p(X)
+
+
+def basic_filtering(block_gm, block_positions):
+    non_bial = np.any(block_gm > 1, axis=0)
+    freq = block_gm.sum(0)
+    fixed = (freq == 0) | (freq == block_gm.shape[0])
+    mask = non_bial | fixed
+    return block_gm[:, ~mask], block_positions[~mask]
+
 
 
 # --------------------------
@@ -177,15 +256,41 @@ def _make_generators(N, device, base_seed):
 
 
 def _sample_per_row(probs, generators, row_ids):
-    # probs: [B, V], row_ids: [B] global indices
-    cdf = probs.cumsum(dim=-1)                         # [B, V]
-    B = probs.size(0)
+    """
+    Robust categorical sampling per row, deterministic via per-row generators.
+    Guarantees indices in [0, V-1] even under FP rounding.
+    """
+    # Guard: zero-out tiny negatives, renormalize
+    probs = torch.clamp(probs, min=0)
+    probs_sum = probs.sum(dim=-1, keepdim=True)
+    # If any row sums to 0 (top_k removed all mass), fallback to uniform
+    zero_mask = (probs_sum == 0)
+    if zero_mask.any():
+        V = probs.size(-1)
+        probs = probs.masked_fill(zero_mask, 1.0 / V)
+        probs_sum = probs_sum.masked_fill(zero_mask, 1.0)  # avoid div-by-0
+    probs = probs / probs_sum
+
+    # CDF with last element forced to exactly 1 to avoid searchsorted==V
+    cdf = probs.cumsum(dim=-1)
+    # Numerical safety: ensure last column is one
+    cdf[:, -1] = 1.0
+
+    B, V = probs.size(0), probs.size(1)
+    # Draw u in [0, 1) deterministically per row
     u = torch.empty(B, 1, device=probs.device)
     for i in range(B):
-        u[i, 0] = torch.rand((), device=probs.device,
-                             generator=generators[int(row_ids[i])])
-    idx = torch.searchsorted(cdf, u, right=True)       # [B, 1]
-    return idx.long()
+        g = generators[int(row_ids[i])]
+        # strictly less than 1.0 to avoid edges
+        u[i, 0] = torch.rand((), device=probs.device, generator=g)
+        if u[i, 0] == 1:  # ultra-rare, but clamp
+            u[i, 0] = torch.nextafter(torch.tensor(1.0, device=probs.device), torch.tensor(0.0, device=probs.device))
+
+    idx = torch.searchsorted(cdf, u, right=True)
+    # clamp to [0, V-1]
+    idx = torch.clamp(idx, 0, V - 1).long()
+    return idx
+
 
 
 # --------------------------
@@ -204,8 +309,9 @@ def ensure_cache_B(model, B, T=1001):
 @torch.no_grad()
 def generate(model, src, B=20, device="cuda", top_k=50, base_seed=1234,
              cache_matching=False, progress: bool = True, decode_bar: bool = False):
+    curB = B
     if cache_matching:
-        ensure_cache_B(model, B)
+        ensure_cache_B(model, curB)   
     model.eval()
     N = src.size(0)
     gens = _make_generators(N, device, base_seed)
@@ -249,6 +355,94 @@ def generate(model, src, B=20, device="cuda", top_k=50, base_seed=1234,
                 idx = torch.cat([idx, next_token], dim=1)
 
             outs.append(idx)
+            if hasattr(model, "clear_cache"):
+                model.clear_cache()
+
+    return torch.cat(outs, dim=0)
+
+@torch.no_grad()
+def generate(
+    model,
+    src,
+    B: int = 20,
+    device: str = "cuda",
+    top_k: int | None = 50,
+    base_seed: int = 1234,
+    cache_matching: bool = False,
+    progress: bool = True,
+    decode_bar: bool = False,
+):
+    """
+    Deterministic, cache-safe generate():
+      - Resizes KV cache per *actual* microbatch (curB) when cache_matching=True
+      - Uses a single broadcastable attention mask (no .repeat())
+      - Clamps top_k to vocab size and uses robust sampler (_sample_per_row)
+      - Validates vocab size stays constant during decode
+    """
+    model.eval()
+    N = src.size(0)
+    gens = _make_generators(N, device, base_seed)
+    outs = []
+
+    # Infer (or fix) sequence lengths used by your model
+    T_total = 1001   # 500 src + 1 BOS + up to 500 decode
+    full_n  = 501    # allow full attention for first 501 tokens
+
+    # Build/reuse a single broadcastable mask [1, 1, T_total, T_total]
+    mask_key = (str(device), T_total, full_n)
+    attn_mask = _ATTENTION_MASK_CACHE.get(mask_key)
+    if attn_mask is None:
+        attn_mask = generate_causal_mask(T_total, full_attention_n=full_n, device=device)
+        _ATTENTION_MASK_CACHE[mask_key] = attn_mask
+
+    # Chunk over the batch
+    chunk_iter = range(0, N, B)
+    if progress:
+        chunk_iter = tqdm(chunk_iter, total=(N + B - 1)//B, desc=f"Generate @ {device}", leave=False)
+
+    with torch.inference_mode():
+        for start in chunk_iter:
+            end = min(start + B, N)
+            batch_src = src[start:end].to(device, non_blocking=True)
+            curB = batch_src.size(0)
+            row_ids = torch.arange(start, end, device=device)
+
+            # Ensure KV cache matches *actual* microbatch size
+            if cache_matching:
+                ensure_cache_B(model, curB)  # idempotent; cheap if size unchanged
+
+            # Prime cache before decode
+            _ = model(batch_src, None, attn_mask, calculate_loss=False, use_cache=True, position=0)
+            idx = torch.ones(curB, 1, dtype=torch.long, device=device)
+
+            # Decode loop
+            token_range = trange(500, 1000, desc=f" decode {start}:{end}", leave=False) if decode_bar else range(500, 1000)
+            V0 = None  # track vocab size consistency
+
+            for i in token_range:
+                logits = model(batch_src, idx[:, -1:], attn_mask, calculate_loss=False, use_cache=True, position=i)
+                logits = logits[:, -1, :]  # [B, V]
+                V = logits.size(-1)
+
+                # Vocab size should not change mid-decode
+                if V0 is None:
+                    V0 = V
+                elif V != V0:
+                    raise RuntimeError(f"Vocab size changed during decode: was {V0}, now {V}")
+
+                # Safe top-k: clamp to V and avoid zeroing all mass
+                if top_k is not None:
+                    tk = int(min(top_k, V)) or V
+                    v, _ = torch.topk(logits, tk)
+                    logits[logits < v[:, [-1]]] = -float("inf")
+
+                probs = F.softmax(logits, dim=-1)
+                next_token = _sample_per_row(probs, gens, row_ids)  # robust per-row sampler
+                idx = torch.cat([idx, next_token], dim=1)
+
+            outs.append(idx)
+
+            # Clear per-chunk caches if available
             if hasattr(model, "clear_cache"):
                 model.clear_cache()
 
@@ -305,21 +499,37 @@ def _thread_worker_generate(
     decode_bar: bool,
 ):
     # bind CUDA context to this thread/device
-    if torch.cuda.is_available() and device.startswith("cuda"):
-        torch.cuda.set_device(int(device.split(":")[1]))
-    with torch.inference_mode():
-        y = generate(
-            model=model,
-            src=src_chunk.to(device, non_blocking=True),
-            B=min(B_local, src_chunk.size(0)),
-            device=device,
-            top_k=top_k,
-            base_seed=base_seed,
-            cache_matching=cache_matching,
-            progress=progress,
-            decode_bar=decode_bar,
-        )
-    out_list[out_index] = y.to("cpu", non_blocking=True)
+    try:
+        # Bind CUDA to this thread
+        if torch.cuda.is_available() and device.startswith("cuda"):
+            torch.cuda.set_device(int(device.split(":")[1]))
+
+        # Per-thread RNG seeding for determinism (covers stray usage)
+        import random, numpy as np
+        random.seed(base_seed + out_index)
+        np.random.seed(base_seed + out_index)
+        torch.manual_seed(base_seed + out_index)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(base_seed + out_index)
+
+        with torch.inference_mode():
+            y = generate(
+                model=model,
+                src=src_chunk.to(device, non_blocking=True),
+                B=min(B_local, src_chunk.size(0)),
+                device=device,
+                top_k=top_k,
+                base_seed=base_seed,
+                cache_matching=cache_matching,
+                progress=progress,
+                decode_bar=decode_bar,
+            )
+        out_list[out_index] = y.to("cpu", non_blocking=True)
+
+    except Exception as e:
+        # Store the exception object in the slot, with traceback attached
+        e._traceback = traceback.format_exc()
+        out_list[out_index] = e
 
 
 def multi_gpu_generate(
@@ -399,6 +609,18 @@ def multi_gpu_generate(
     for t in threads:
         t.join()
 
+    # NEW: verify all shards produced tensors, else aggregate errors
+    bad = [(i, r) for i, r in enumerate(results) if not isinstance(r, torch.Tensor)]
+    if bad:
+        msgs = []
+        for i, r in bad:
+            dev = devices[i] if i < len(devices) else f"shard#{i}"
+            if hasattr(r, "_traceback"):
+                msgs.append(f"[{dev}] {type(r).__name__}: {r}\n{r._traceback}")
+            else:
+                msgs.append(f"[{dev}] Non-tensor result: {repr(r)}")
+        raise RuntimeError("multi_gpu_generate failed on some shards:\n\n" + "\n".join(msgs))
+
     Y = torch.cat(results, dim=0)
 
     for mdl in models:
@@ -411,6 +633,7 @@ def multi_gpu_generate(
     return Y
 
 
+#----------------not used shadowed below
 # --------------------------
 # Core translate (multi-GPU + mp build)
 # --------------------------
@@ -436,17 +659,23 @@ def translate_from_genotype_matrix(
     Returns yhat of shape (n_items, n_reps, ...).
     n_items = len(one_mb_blocks) * len(pivot_ids)
     """
-    check_blocks(one_mb_blocks)
+    #check_blocks(one_mb_blocks)
     gm_samples = gm[sample_ids, :]
 
+    a, b = one_mb_blocks[0]
+    sequence_length = int(b - a)
+    step_size =sequence_length // 500  # 2000 for 1e6
+
     # ---------- build sources ----------
-    tasks, index_map = _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids)
+    tasks, index_map = _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids, sequence_length, step_size)
 
     if build_workers and build_workers > 1:
         X_base = _build_sources_parallel(tasks, progress=progress, max_workers=build_workers)
     else:
         X_base = _build_sources_serial(tasks, progress=progress)
 
+    
+    """
     N = X_base.shape[0]
     B_local = B if B_per_device is None else B_per_device
     tensor_device = device if not (devices and len(devices) > 1) else "cpu"
@@ -502,7 +731,83 @@ def translate_from_genotype_matrix(
     # undo interleave → [N, n_reps, ...]
     Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1).contiguous()
     return to_log_times(Y, rep_mode=True), index_map
+    """
 
+    # ---------- after building X_base ----------
+    N = X_base.shape[0]
+    B_local = B if B_per_device is None else B_per_device
+    tensor_device = device if not (devices and len(devices) > 1) else "cpu"
+
+    # Match model dtype (prevents Half/Float mismatch), keep on CPU and pin (A+B)
+    param_dtype = next(model.parameters()).dtype
+    X_cpu = torch.as_tensor(X_base, dtype=param_dtype, device="cpu")
+    if torch.cuda.is_available():
+        X_cpu = X_cpu.pin_memory()
+
+    # -------- single-rep path (unchanged behavior, but uses pinned CPU tensor) -------
+    if n_reps <= 1:
+        if devices and len(devices) > 1:
+            yhat = multi_gpu_generate(
+                model=model, src=X_cpu, devices=devices, B_per_device=B_local,
+                top_k=top_k, base_seed=base_seed, cache_matching=cache_matching,
+                progress=progress, decode_bar=decode_bar
+            )
+        else:
+            y_list = []
+            loop = _iter_chunks(N, B)
+            if progress:
+                loop = tqdm(loop, total=(N + B - 1)//B, desc="Batches", leave=False)
+            for s, e in loop:
+                y_chunk = generate(
+                    model, X_cpu[s:e], B=min(B, e - s), device=device,
+                    top_k=top_k, base_seed=base_seed + s,
+                    cache_matching=cache_matching, progress=False, decode_bar=decode_bar
+                )
+                y_list.append(y_chunk)
+            yhat = torch.cat(y_list, dim=0)
+        return to_log_times(yhat, rep_mode=False), index_map
+
+    # -------- multi-rep path WITHOUT np.repeat (A) --------
+    # Logical repetition via indices; feed in chunks; still uses your B / B_per_device.
+    #ids = torch.arange(N, dtype=torch.long).repeat_interleave(n_reps)  # [N*n_reps]
+    ids = torch.tile(torch.arange(N, dtype=torch.long), (n_reps,))  # [0..N-1, 0..N-1, ...]
+
+
+    Y_parts = []
+    world = len(devices) if (devices and len(devices) > 1) else 1
+    chunk_size = (B_local if B_per_device is not None else B) * world  # respects your batch sizing
+
+    loop = _iter_chunks(ids.numel(), chunk_size)
+    if progress:
+        loop = tqdm(loop, total=(ids.numel() + chunk_size - 1)//chunk_size,
+                    desc="Batches (reps fused)", leave=False)
+
+    for s, e in loop:
+        sel = ids[s:e]                           # CPU index view
+        X_chunk = X_cpu.index_select(0, sel)     # gather only this chunk (still pinned)
+
+        if devices and len(devices) > 1:
+            Y_part = multi_gpu_generate(
+                model=model, src=X_chunk, devices=devices, B_per_device=B_local,
+                top_k=top_k, base_seed=base_seed + s, cache_matching=cache_matching,
+                progress=False, decode_bar=decode_bar
+            )
+        else:
+            Y_part = generate(
+                model, X_chunk, B=min(B, X_chunk.size(0)), device=device,
+                top_k=top_k, base_seed=base_seed + s,
+                cache_matching=cache_matching, progress=False, decode_bar=decode_bar
+            )
+        Y_parts.append(Y_part)
+
+    Y = torch.cat(Y_parts, dim=0)                                # [N*n_reps, ...]
+    Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1)       # [N, n_reps, ...]
+    return to_log_times(Y.contiguous(), rep_mode=True), index_map
+    
+
+
+    
+    
 
 # --------------------------
 # VCF / TS wrappers (unchanged API + devices + progress)
@@ -527,7 +832,7 @@ def vcf_parser(path):
     genotypes = pd.concat(haplo, axis=1).to_numpy(dtype=np.int32)
     return positions, genotypes.T
 
-
+"""
 def translate_from_vcf(vcf_path, model, one_mb_blocks=[(0e6,1e6)], pivot_ids=[(0,1)],
                        sample_ids=np.arange(0,50), device="cuda", B=24,
                        cache_matching=False, n_reps=15, base_seed=1234, top_k=50,
@@ -560,10 +865,10 @@ def translate_from_ts(ts, model, one_mb_blocks=[(0e6,1e6)], pivot_ids=[(0,1)],
 
 
 def translate(input_data, data_type, model, one_mb_blocks=[(0e6,1e6)], pivot_ids=[(0,1)],
-              sample_ids=np.arange(0,50), device="cuda", B=24, cache_matching=False,
+              sample_ids=np.arange(0,50), device="cuda", B=128, cache_matching=True,
               n_reps=15, base_seed=1234, top_k=50,
               devices: Sequence[str] | None = None, B_per_device: int | None = None,
-              progress: bool = True, decode_bar: bool = False, build_workers: int = 0):
+              progress: bool = True, decode_bar: bool = True, build_workers: int = 8):
     if data_type == "vcf":
         return translate_from_vcf(input_data, model, one_mb_blocks, pivot_ids,
                                   sample_ids, device, B, cache_matching,
@@ -587,6 +892,8 @@ def translate(input_data, data_type, model, one_mb_blocks=[(0e6,1e6)], pivot_ids
             progress=progress, decode_bar=decode_bar, build_workers=build_workers)
     else:
         raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")
+"""
+
 
 
 # --------------------------
@@ -633,7 +940,7 @@ def ground_truth_tmrca(ts, block, pivot_A, pivot_B, window_size=2000):
 
 
 
-def _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids):
+def _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids, sequence_length, step_size):
     tasks = []
     index_map = []
     for b_idx, (block_start, block_end) in enumerate(one_mb_blocks):
@@ -648,52 +955,455 @@ def _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids):
         block_gm, block_pos_rel = basic_filtering(block_gm, block_pos_rel)
 
         for p_idx, (pivot_A, pivot_B) in enumerate(pivot_ids):
-            tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B))
+            tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B, sequence_length, step_size))
             index_map.append((b_idx, p_idx))
     return tasks, np.array(index_map, dtype=np.int32)
 
-def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B):
-    # masks per site
-    xor_mask  = (block_gm[pivot_id_A] ^ block_gm[pivot_id_B]).astype(bool)
-    xnor_mask = ~xor_mask
 
-    # site frequencies among samples
-    freqs = block_gm.sum(0).astype(np.int32)
 
-    # SUBSET positions AND freqs consistently
-    pos_xor,  freqs_xor  = block_positions[xor_mask],  freqs[xor_mask]
-    pos_xnor, freqs_xnor = block_positions[xnor_mask], freqs[xnor_mask]
 
-    # helper that tolerates empty sets
-    def sfs_for(pos, f, win_mult):
-        if pos.size == 0:
-            return np.zeros((int(np.ceil(1e6/2000)), 50), dtype=np.int32)
-        return calculate_window_sfs_vectorized(
-            positions=pos.astype(np.float32),
-            pivot_frequencies=f.astype(np.int32),
-            window_size=2000 * win_mult,
-            sequence_length=1e6,
-            num_samples=50,
-            step_size=2000,
+
+
+
+
+
+# ============================================================
+# Fast process-per-GPU helpers + wrappers (explicit spawn ctx)
+# ============================================================
+
+def _get_spawn_ctx():
+    """
+    Always return a multiprocessing context configured for 'spawn'.
+    Using the context's Process/Queue avoids accidental 'fork' in notebooks.
+    """
+    try:
+        import multiprocessing as mp
+    except Exception:
+        import torch.multiprocessing as mp
+    try:
+        return mp.get_context("spawn")
+    except Exception:
+        # Older Python may not support get_context on torch.multiprocessing
+        # Fall back to stdlib mp with forced spawn start method.
+        if mp.get_start_method(allow_none=True) is None:
+            mp.set_start_method("spawn", force=True)
+        return mp
+
+
+# ─────────────────────────────────────────────────────────────
+# Worker: always quiet (no tqdm, no decode bars)
+# ─────────────────────────────────────────────────────────────
+def _proc_worker_generate_fast_mainloop(
+    rank: int,
+    device: str,
+    model_cpu_or_none,
+    model_factory_or_none,
+    X_base_np,
+    ids_np,
+    id_chunks,
+    B_local: int,
+    base_seed: int,
+    cache_matching: bool,
+    decode_bar: bool,     # ignored in worker (forced False)
+    out_queue,
+    progress: bool,       # ignored in worker (forced False)
+):
+    import traceback as _tb
+    try:
+        import random, copy, torch, numpy as _np
+        if torch.cuda.is_available() and str(device).startswith("cuda:"):
+            torch.cuda.set_device(int(str(device).split(":")[1]))
+
+        # Determinism per worker
+        random.seed(base_seed + rank)
+        _np.random.seed(base_seed + rank)
+        torch.manual_seed(base_seed + rank)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(base_seed + rank)
+
+        # Build/clone model inside child
+        if callable(model_factory_or_none):
+            try:
+                mdl = model_factory_or_none("broad")
+            except TypeError:
+                mdl = model_factory_or_none()
+        else:
+            mdl = copy.deepcopy(model_cpu_or_none)
+
+        mdl = mdl.to(device, non_blocking=True)
+        if hasattr(mdl, "cache_to_device"):
+            mdl.cache_to_device(device)
+        mdl.eval()
+        p_dtype = next(mdl.parameters()).dtype
+
+        # Iterate assigned chunks (no tqdm in worker)
+        for (s, e) in id_chunks:
+            sel = ids_np[s:e]
+            X_chunk_np = X_base_np[sel]
+            X_cpu = torch.as_tensor(X_chunk_np, dtype=p_dtype, device="cpu")
+            if torch.cuda.is_available():
+                X_cpu = X_cpu.pin_memory()
+            with torch.inference_mode():
+                Y_part = generate(
+                    model=mdl,
+                    src=X_cpu,
+                    B=min(B_local, X_cpu.size(0)),
+                    device=device,
+                    top_k=50,
+                    base_seed=base_seed + s,
+                    cache_matching=cache_matching,
+                    progress=False,         # ← force quiet
+                    decode_bar=False,       # ← force quiet
+                )
+                out_queue.put((s, Y_part.cpu().numpy()))
+
+        try:
+            if hasattr(mdl, "clear_cache"):
+                mdl.clear_cache()
+        except Exception:
+            pass
+
+    except Exception as e:
+        e._traceback = _tb.format_exc()
+        out_queue.put(("__error__", rank, str(e), e._traceback))
+
+
+
+# ─────────────────────────────────────────────────────────────
+# Parent: explicit spawn ctx + single notebook progress bar
+# ─────────────────────────────────────────────────────────────
+def _fast_process_per_gpu_generate(
+    X_base,
+    devices,
+    B_per_device: int,
+    n_reps: int,
+    base_seed: int,
+    cache_matching: bool,
+    decode_bar: bool,          # parent-wide decode flag (workers are quiet)
+    model_cpu,
+    model_factory_or_none,
+    progress: bool = True,     # parent progress bar
+):
+    """
+    Rep-major, process-per-GPU fast path (explicit spawn context).
+    Workers are silent; parent shows a single Jupyter tqdm over chunks.
+    """
+    import numpy as _np, torch
+    # explicit spawn context avoids accidental fork in notebooks
+    try:
+        import multiprocessing as mp
+    except Exception:
+        import torch.multiprocessing as mp
+    try:
+        ctx = mp.get_context("spawn")
+    except Exception:
+        if mp.get_start_method(allow_none=True) is None:
+            mp.set_start_method("spawn", force=True)
+        ctx = mp
+
+    N = X_base.shape[0]
+    world = len(devices)
+
+    # Rep-major ids: [0..N-1] tiled n_reps times
+    ids = _np.tile(_np.arange(N, dtype=_np.int64), n_reps)
+
+    # Chunk stream; round-robin to devices
+    chunk_size = max(1, B_per_device * max(1, world))
+    ranges = [(s, min(s + chunk_size, ids.size)) for s in range(0, ids.size, chunk_size)]
+    shards = [[] for _ in range(world)]
+    for i, r in enumerate(ranges):
+        shards[i % world].append(r)
+
+    # Use context’s SimpleQueue/Process (no Manager, no fork)
+    out_q = ctx.SimpleQueue()
+    procs = []
+    for rank, dev in enumerate(devices):
+        p = ctx.Process(
+            target=_proc_worker_generate_fast_mainloop,
+            args=(
+                rank, dev,
+                model_cpu, model_factory_or_none,
+                X_base, ids, shards[rank],
+                B_per_device, base_seed, cache_matching, decode_bar,
+                out_q, False  # workers are always quiet
+            ),
         )
+        p.start()
+        procs.append(p)
 
-    w_multipliers = (2, 8, 32, 64)
-    n_w = int(np.ceil(1e6/2000))  # 500
-    Xs_xor  = np.zeros((len(w_multipliers), n_w, 50), dtype=np.int32)
-    Xs_xnor = np.zeros((len(w_multipliers), n_w, 50), dtype=np.int32)
+    # Parent progress: one bar over number of chunks
+    expected = sum(len(x) for x in shards)
+    pieces, n_done = [], 0
+    if progress:
+        try:
+            from tqdm.notebook import tqdm as _tqdm  # pretty blue bars
+        except Exception:
+            from tqdm import tqdm as _tqdm           # fallback ASCII
+        pbar = _tqdm(total=expected, desc="Fast multi-GPU chunks", leave=True)
+    else:
+        pbar = None
 
-    for i, w in enumerate(w_multipliers):
-        Xs_xor[i]  = sfs_for(pos_xor,  freqs_xor,  w)
-        Xs_xnor[i] = sfs_for(pos_xnor, freqs_xnor, w)
+    while n_done < expected:
+        msg = out_q.get()
+        if isinstance(msg, tuple) and len(msg) >= 2 and msg[0] == "__error__":
+            _, rank, err, tb = msg
+            for p in procs: p.join(timeout=0.1)
+            if pbar: pbar.close()
+            raise RuntimeError(f"Worker {rank} failed: {err}\n{tb}")
+        s, y_np = msg
+        pieces.append((s, y_np))
+        n_done += 1
+        if pbar: pbar.update(1)
 
-    X = np.stack([Xs_xor, Xs_xnor], axis=0).astype(np.float16)
-    return np.log1p(X)
+    for p in procs:
+        p.join()
+
+    if pbar:
+        pbar.close()
+
+    pieces.sort(key=lambda t: t[0])
+    Y_cpu = torch.from_numpy(_np.concatenate([p[1] for p in pieces], axis=0))
+    return Y_cpu
 
 
-def basic_filtering(block_gm, block_positions):
-    non_bial = np.any(block_gm > 1, axis=0)
-    freq = block_gm.sum(0)
-    fixed = (freq == 0) | (freq == block_gm.shape[0])
-    mask = non_bial | fixed
-    return block_gm[:, ~mask], block_positions[~mask]
 
+def translate_from_genotype_matrix(
+        gm,
+        positions,
+        model,  # CPU model object
+        one_mb_blocks=[(0e6, 1e6)],
+        pivot_ids=[(0, 1)],
+        sample_ids=np.arange(0, 50),
+        device="cuda", B=24,
+        cache_matching=False,
+        n_reps: int = 15,
+        base_seed: int = 1234,
+        top_k: int = 50,
+        devices=None,
+        B_per_device: int | None = None,
+        progress: bool = True,
+        decode_bar: bool = False,
+        build_workers: int = 0,
+        use_fast_process_per_gpu: bool = False,  # NEW
+    ):
+    """
+    Returns yhat of shape (n_items, n_reps, ...).
+    NOTE: requires existing helpers in your module:
+      _prepare_build_tasks, _build_sources_parallel/_serial, _iter_chunks,
+      multi_gpu_generate, generate, to_log_times, vcf_parser.
+    """
+    import numpy as _np, torch
+    gm_samples = gm[sample_ids, :]
+    a, b = one_mb_blocks[0]
+    sequence_length = int(b - a)
+    step_size = sequence_length // 500
+
+    # Build sources (mp or serial)
+    tasks, index_map = _prepare_build_tasks(
+        gm_samples, positions, one_mb_blocks, pivot_ids, sequence_length, step_size
+    )
+    if build_workers and build_workers > 1:
+        X_base = _build_sources_parallel(tasks, progress=progress, max_workers=build_workers)
+    else:
+        X_base = _build_sources_serial(tasks, progress=progress)
+
+    N = X_base.shape[0]
+    B_local = B if B_per_device is None else B_per_device
+
+    # Keep source on CPU (pinned for H2D overlap inside generate)
+    param_dtype = next(model.parameters()).dtype
+    X_cpu_t = torch.as_tensor(X_base, dtype=param_dtype, device="cpu")
+    if torch.cuda.is_available():
+        X_cpu_t = X_cpu_t.pin_memory()
+
+    # --- single-rep path ---
+    if n_reps <= 1:
+        if devices and len(devices) > 1:
+            yhat = multi_gpu_generate(
+                model=model, src=X_cpu_t, devices=devices, B_per_device=B_local,
+                top_k=top_k, base_seed=base_seed, cache_matching=cache_matching,
+                progress=progress, decode_bar=decode_bar
+            )
+        else:
+            y_list = []
+            loop = _iter_chunks(N, B)
+            if progress:
+                from tqdm.auto import tqdm as _tqdm
+                loop = _tqdm(loop, total=(N + B - 1)//B, desc="Batches", leave=False)
+            for s, e in loop:
+                y_chunk = generate(
+                    model, X_cpu_t[s:e], B=min(B, e - s), device=device,
+                    top_k=top_k, base_seed=base_seed + s,
+                    cache_matching=cache_matching, progress=False, decode_bar=decode_bar
+                )
+                y_list.append(y_chunk)
+            yhat = torch.cat(y_list, dim=0)
+        return to_log_times(yhat, rep_mode=False), index_map
+
+    # --- multi-rep paths ---
+    world = len(devices) if (devices and len(devices) > 1) else 1
+
+    # Prefer model factory if available (so child builds model)
+    model_factory = globals().get("setup_cxt_model", None) if use_fast_process_per_gpu else None
+
+    if devices and len(devices) > 1 and use_fast_process_per_gpu:
+        X_np = X_base if isinstance(X_base, _np.ndarray) else X_cpu_t.cpu().numpy()
+        Y_flat = _fast_process_per_gpu_generate(
+            X_base=X_np,
+            devices=devices,
+            B_per_device=B_local,
+            n_reps=n_reps,
+            base_seed=base_seed,
+            cache_matching=cache_matching,
+            decode_bar=decode_bar,
+            model_cpu=model,                 # fallback only
+            model_factory_or_none=model_factory,
+            progress=progress,
+        )
+        Y = Y_flat.reshape(n_reps, N, *Y_flat.shape[1:]).transpose(0, 1).contiguous()
+        return to_log_times(Y, rep_mode=True), index_map
+
+    # Default safe path (threaded multi-GPU or single GPU)
+    ids = torch.tile(torch.arange(N, dtype=torch.long), (n_reps,))
+    Y_parts = []
+    chunk_size = (B_local if B_per_device is not None else B) * world
+    loop = _iter_chunks(ids.numel(), chunk_size)
+    if progress:
+        from tqdm.auto import tqdm as _tqdm
+        loop = _tqdm(loop, total=(ids.numel() + chunk_size - 1)//chunk_size,
+                     desc="Batches (reps fused)", leave=False)
+
+    for s, e in loop:
+        sel = ids[s:e]
+        X_chunk = X_cpu_t.index_select(0, sel.to(dtype=torch.long))
+        if devices and len(devices) > 1:
+            Y_part = multi_gpu_generate(
+                model=model, src=X_chunk, devices=devices, B_per_device=B_local,
+                top_k=top_k, base_seed=base_seed + s, cache_matching=cache_matching,
+                progress=False, decode_bar=decode_bar
+            )
+        else:
+            Y_part = generate(
+                model, X_chunk, B=min(B, X_chunk.size(0)), device=device,
+                top_k=top_k, base_seed=base_seed + s,
+                cache_matching=cache_matching, progress=False, decode_bar=decode_bar
+            )
+        Y_parts.append(Y_part)
+
+    Y = torch.cat(Y_parts, dim=0)
+    Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1)
+    return to_log_times(Y.contiguous(), rep_mode=True), index_map
+
+
+def translate_from_vcf(
+    vcf_path,
+    model,
+    one_mb_blocks=[(0e6, 1e6)],
+    pivot_ids=[(0, 1)],
+    sample_ids=np.arange(0, 50),
+    device="cuda",
+    B=24,
+    cache_matching=False,
+    n_reps=15,
+    base_seed=1234,
+    top_k=50,
+    devices=None,
+    B_per_device: int | None = None,
+    progress: bool = True,
+    decode_bar: bool = False,
+    build_workers: int = 0,
+    use_fast_process_per_gpu: bool = False,  # NEW
+):
+    positions, gm = vcf_parser(vcf_path)
+    return translate_from_genotype_matrix(
+        gm=gm, positions=positions, model=model,
+        one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
+        device=device, B=B, cache_matching=cache_matching,
+        n_reps=n_reps, base_seed=base_seed, top_k=top_k,
+        devices=devices, B_per_device=B_per_device,
+        progress=progress, decode_bar=decode_bar, build_workers=build_workers,
+        use_fast_process_per_gpu=use_fast_process_per_gpu,
+    )
+
+
+def translate_from_ts(
+    ts,
+    model,
+    one_mb_blocks=[(0e6, 1e6)],
+    pivot_ids=[(0, 1)],
+    sample_ids=np.arange(0, 50),
+    device="cuda",
+    B=24,
+    cache_matching=False,
+    n_reps=15,
+    base_seed=1234,
+    top_k=50,
+    devices=None,
+    B_per_device: int | None = None,
+    progress: bool = True,
+    decode_bar: bool = False,
+    build_workers: int = 0,
+    use_fast_process_per_gpu: bool = False,  # NEW
+):
+    positions = ts.tables.sites.position
+    gm = ts.genotype_matrix().T
+    return translate_from_genotype_matrix(
+        gm=gm, positions=positions, model=model,
+        one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
+        device=device, B=B, cache_matching=cache_matching,
+        n_reps=n_reps, base_seed=base_seed, top_k=top_k,
+        devices=devices, B_per_device=B_per_device,
+        progress=progress, decode_bar=decode_bar, build_workers=build_workers,
+        use_fast_process_per_gpu=use_fast_process_per_gpu,
+    )
+
+
+def translate(
+    input_data,
+    data_type,
+    model,
+    one_mb_blocks=[(0e6, 1e6)],
+    pivot_ids=[(0, 1)],
+    sample_ids=np.arange(0, 50),
+    device="cuda",
+    B=128,
+    cache_matching=True,
+    n_reps=15,
+    base_seed=1234,
+    top_k=50,
+    devices=None,
+    B_per_device: int | None = None,
+    progress: bool = True,
+    decode_bar: bool = True,
+    build_workers: int = 8,
+    use_fast_process_per_gpu: bool = False,  # NEW
+):
+    if data_type == "vcf":
+        return translate_from_vcf(
+            input_data, model, one_mb_blocks, pivot_ids, sample_ids,
+            device, B, cache_matching, n_reps, base_seed, top_k,
+            devices=devices, B_per_device=B_per_device,
+            progress=progress, decode_bar=decode_bar, build_workers=build_workers,
+            use_fast_process_per_gpu=use_fast_process_per_gpu,
+        )
+    elif data_type == "ts":
+        return translate_from_ts(
+            input_data, model, one_mb_blocks, pivot_ids, sample_ids,
+            device, B, cache_matching, n_reps, base_seed, top_k,
+            devices=devices, B_per_device=B_per_device,
+            progress=progress, decode_bar=decode_bar, build_workers=build_workers,
+            use_fast_process_per_gpu=use_fast_process_per_gpu,
+        )
+    elif data_type == "gm":
+        gm, positions = input_data
+        return translate_from_genotype_matrix(
+            gm=gm, positions=positions, model=model,
+            one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
+            device=device, B=B, cache_matching=cache_matching,
+            n_reps=n_reps, base_seed=base_seed, top_k=top_k,
+            devices=devices, B_per_device=B_per_device,
+            progress=progress, decode_bar=decode_bar, build_workers=build_workers,
+            use_fast_process_per_gpu=use_fast_process_per_gpu,
+        )
+    else:
+        raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")

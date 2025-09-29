@@ -16,8 +16,6 @@ from typing import List, Dict, Optional
 import warnings
 warnings.filterwarnings("ignore")
 
-
-
 def create_sawtooth_demogaphy_object(Ne = 2*10**4, magnitue=4):
     demography = msprime.Demography()
     demography.add_population(initial_size=(Ne))
@@ -77,10 +75,10 @@ def sampling_populations(model):
 def is_any_numeric_or_roman_numeral(item):
     # includes C. elegans chromosomes
     for char in item:
-        if char.isdigit() or char in ['I', 'II', 'III', 'IV', 'V', 'X']:
+        if char.isdigit() or char in ['I', 'II', 'III', 'IV', 'V']: # removes X
             if char == 'CM009947.2':
                 return False
-            else: return True
+            else: return True#False
     if item == 'Mt' or item == 'Pt':
         return False
     return False
@@ -134,10 +132,13 @@ def simulate_random_segment(
         
         # valid genetic map region sampling
         while True:
+            
             left = np.random.uniform(0, chromosome.length - segment_length)
             right = left + segment_length
             left_mask = whole_contig.recombination_map.left >= left
             right_mask = whole_contig.recombination_map.right < right
+            #print("Sampling valid genetic map region...")
+            #print(f"Chromosome: {chromosome.id}, left: {left}, right: {right}")
             if not left_mask.any() or not right_mask.any():
                 continue  
             contig = species.get_contig(
@@ -187,12 +188,12 @@ def generate_data(args) -> tuple:
         - y : np.ndarray
             A 1D array with log-interpolated TMRCA values.
     """
-    i, pivot_A, pivot_B, ts_simulation_func, randomize_pivots = args 
+    i, pivot_A, pivot_B, ts_simulation_func, randomize_pivots, n_individuals = args
     ts = ts_simulation_func(i)
     #print(i)
     
     if randomize_pivots:
-        pivots = np.arange(0, 50)
+        pivots = np.arange(0, int(2*n_individuals))
         np.random.shuffle(pivots)
         pivot_A = pivots[0]
         pivot_B = pivots[1]
@@ -214,7 +215,7 @@ def save_batch(data, idx, output_dir):
 def process_batches(num_samples: int, start_batch: int,
                     batch_size: int, num_processes: int,
                     output_dir: str, pivot_A: int, pivot_B: int,
-                    ts_simulation_func: callable, randomize_pivots: bool) -> None:
+                    ts_simulation_func: callable, randomize_pivots: bool, n_individuals: int) -> None:
     """
     Process data in batches using multiprocessing and save the results.
 
@@ -249,7 +250,7 @@ def process_batches(num_samples: int, start_batch: int,
         start_sample = batch_idx * batch_size
         args = []
         for i in range(start_sample, num_samples):
-            args.append((i, pivot_A, pivot_B, ts_simulation_func, randomize_pivots))
+            args.append((i, pivot_A, pivot_B, ts_simulation_func, randomize_pivots, n_individuals))
 
         for i, result in enumerate(tqdm(pool.imap(generate_data, args), total=num_samples-start_sample)):
             batch.append(result)
@@ -265,6 +266,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process simulation parameters.')
     parser.add_argument('--num_processes', type=int, default=30, help='Number of processes to use')
     parser.add_argument('--num_samples', type=int, default=2_000_000, help='Number of samples to generate')
+    parser.add_argument('--n_individuals', type=int, default=25, help='Number of diploid individuals to simulate')
     parser.add_argument('--batch_size', type=int, default=1000, help='Batch size for saving data')
     parser.add_argument('--start_batch', type=int, default=0, help='Starting batch index')
     parser.add_argument('--pivot_A', type=int, default=0, help='Pivot A index')
@@ -292,25 +294,37 @@ if __name__ == '__main__':
     data_dir = args.data_dir
     scenario = args.scenario
     randomize_pivots = args.randomize_pivots
+    n_individuals = args.n_individuals
 
 
     if scenario == "constant":
-        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence, randomize_pivots)
+        simulate_parameterized_tree_sequence = partial(simulate_parameterized_tree_sequence, samples=n_individuals)
+        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence, randomize_pivots, n_individuals)
 
     elif scenario == "sawtooth":
-        simulate_parameterized_tree_sequence_sawtooth = partial(simulate_parameterized_tree_sequence, demography=create_sawtooth_demogaphy_object(Ne=20e3, magnitue=3))
-        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence_sawtooth, randomize_pivots)
+        simulate_parameterized_tree_sequence_sawtooth = partial(simulate_parameterized_tree_sequence, demography=create_sawtooth_demogaphy_object(Ne=20e3, magnitue=3), samples=n_individuals)
+        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence_sawtooth, randomize_pivots, n_individuals)
 
     elif scenario == "island":
-        samples = {0: 15, 1: 5, 2: 5}
+        if n_individuals == 5:
+            samples = {0: 3, 1: 1, 2: 1}
+        elif n_individuals == 25:
+            samples = {0: 15, 1: 5, 2: 5}
+        else:
+            samples = {0: int(n_individuals*0.6), 1: int(n_individuals*0.2), 2: int(n_individuals*0.2)}
+            total_samples = sum(samples.values())
+            if total_samples != n_individuals:
+                diff = n_individuals - total_samples
+                samples[0] += diff  # Adjust the first population to match n_individuals
         island_demography = msprime.Demography.island_model([10000, 5000, 5000], migration_rate=0.1)
         simulate_parameterized_tree_sequence_island = partial(simulate_parameterized_tree_sequence, island_demography=island_demography, samples=samples)
-        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence_island, randomize_pivots)
+        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence_island, randomize_pivots, n_individuals)
 
+    # not used
     elif scenario == "random":
         random_scenario = np.random.choice(np.arange(1, 66))
-        simulate_parameterized_tree_sequence_random = partial(simulate_parameterized_tree_sequence, random_scenario=random_scenario)
-        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence_random, randomize_pivots)        
+        simulate_parameterized_tree_sequence_random = partial(simulate_parameterized_tree_sequence, random_scenario=random_scenario, samples=n_individuals)
+        process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B, simulate_parameterized_tree_sequence_random, randomize_pivots, n_individuals)
 
 
 
@@ -318,183 +332,183 @@ if __name__ == '__main__':
     elif scenario == "stdpopsim_homsap":
         species_name = "HomSap"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_homsap_map":
         species_name = "HomSap"
         genetic_map = 'HapMapII_GRCh38'
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_bostau":
         species_name = "BosTau"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_canfam":
         species_name = "CanFam"
         population_size = 13000
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_canfam_map":
         species_name = "CanFam"
         population_size = 13000
         genetic_map = 'Campbell2016_CanFam3_1'
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_pantro":
         species_name = "PanTro"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_papanu":
         species_name = "PapAnu"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_papanu_map":
         species_name = "PapAnu"
         genetic_map = 'Pyrho_PAnubis1_0'
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_ponabe":
         species_name = "PonAbe"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_ponabe_map":
         species_name = "PonAbe"
         genetic_map = 'NaterPA_PonAbe3'
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map, num_samples=n_individuals), randomize_pivots, n_individuals)
     
     # rest of stdpopsim scenarios
     elif scenario == "stdpopsim_aedaeg":
         species_name = "AedAeg"
         population_size = 1_000_000
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
 
     elif scenario == "stdpopsim_anapla":
         species_name = "AnaPla"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                            partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                            partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_anocar":
         species_name = "AnoCar"
         population_size = 3_050_000
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_anogam":
         species_name = "AnoGam"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                            partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                            partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
     
     elif scenario == "stdpopsim_apimel":
         species_name = "ApiMel"
         population_size = 200_000
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_aratha":
         species_name = "AraTha"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
         
     elif scenario == "stdpopsim_aratha_map":
         species_name = "AraTha"
         genetic_map = 'SalomeAveraged_TAIR10'
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                            partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map), randomize_pivots)
+                            partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map, num_samples=n_individuals), randomize_pivots, n_individuals)
         
     elif scenario == "stdpopsim_caeele":
         species_name = "CaeEle"
         population_size = 10000
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_caeele_map":
         species_name = "CaeEle"
         population_size = 10000
         genetic_map = 'RockmanRIAIL_ce11'
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, genetic_map=genetic_map), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, genetic_map=genetic_map, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_dromel":
         species_name = "DroMel"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
         
     elif scenario == "stdpopsim_dromel_map":
         species_name = "DroMel"
         genetic_map = 'ComeronCrossoverV2_dm6'
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, genetic_map=genetic_map, num_samples=n_individuals), randomize_pivots, n_individuals)
         
     elif scenario == "stdpopsim_drosec":
         species_name = "DroSec"
         population_size = 100000
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_gasacu":
         species_name = "GasAcu"
         population_size = 10000
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_helann":
         species_name = "HelAnn"
         population_size = 673_968
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
 
     elif scenario == "stdpopsim_helmel":
         species_name = "HelMel"
         population_size = 2_111_109
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
 
     # stdpopsim update
     elif scenario == "stdpopsim_musmus":
         species_name = "MusMus"
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
         
     elif scenario == "stdpopsim_ratnor":
         species_name = "RatNor"
         population_size = 1.24e5
         process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                         partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                         partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_gorgor":
             species_name = "GorGor"
             process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                            partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                            partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_orysat":
             species_name = "OrySat"
             process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                            partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                            partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
     elif scenario == "stdpopsim_susscr":
             species_name = "SusScr"
             population_size = 270_000
             process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                            partial(simulate_random_segment, species_name=species_name, population_size=population_size), randomize_pivots)
+                            partial(simulate_random_segment, species_name=species_name, population_size=population_size, num_samples=n_individuals), randomize_pivots, n_individuals)
 
 
     elif scenario == "stdpopsim_phosin":
             species_name = "PhoSin"
             process_batches(num_samples, start_batch, batch_size, num_processes, data_dir, pivot_A, pivot_B,
-                            partial(simulate_random_segment, species_name=species_name), randomize_pivots)
+                            partial(simulate_random_segment, species_name=species_name, num_samples=n_individuals), randomize_pivots, n_individuals)
 
 
 
@@ -506,48 +520,48 @@ if __name__ == '__main__':
                 for recombination_rate in [1e-8, 5e-8]:
                     if mutation_rate == 5e-8 and recombination_rate == 5e-8:
                         continue
-                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate)
+                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate, samples=n_individuals)
                     sub_data_dir = f"ne_constant_{population_size:.0e}_{mutation_rate:.1e}_{recombination_rate:.1e}"
                     save_dir = f"{data_dir}/{sub_data_dir}"
-                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
 
     # more constant data below (not used in the end)
     elif scenario == "llm_ne_constant_2":
        for population_size in [0.25e4, 0.5e4, 5e4,6e4,7e4, 8e4,9e4, 10e4, 16e4, 20e4, 32e4, 48e4, 64e4]: 
             for mutation_rate in [1e-8]:
                 for recombination_rate in [1e-8]:
-                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate)
+                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate, samples=n_individuals)
                     sub_data_dir = f"ne_constant_{population_size:.4e}_{mutation_rate:.1e}_{recombination_rate:.1e}" # popsize precision to .4e from .0e for few sizes
                     save_dir = f"{data_dir}/{sub_data_dir}"
-                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
 
     elif scenario == "llm_ne_constant_3":
        for population_size in [10e4, 15e4, 20e4, 25e4, 30e4, 35e4, 40e4, 45e4, 50e4]: 
             for mutation_rate in [1e-9]:
                 for recombination_rate in [1e-9]:
-                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate)
+                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate, samples=n_individuals)
                     sub_data_dir = f"ne_constant_{population_size:.4e}_{mutation_rate:.1e}_{recombination_rate:.1e}" # popsize precision to .4e from .0e for few sizes
                     save_dir = f"{data_dir}/{sub_data_dir}"
-                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
 
     elif scenario == "llm_ne_constant_4":
        for population_size in [10e4, 15e4]: 
             for mutation_rate in [5e-9]:
                 for recombination_rate in [1e-9]:
-                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate)
+                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate, samples=n_individuals)
                     sub_data_dir = f"ne_constant_{population_size:.4e}_{mutation_rate:.1e}_{recombination_rate:.1e}" # popsize precision to .4e from .0e for few sizes
                     save_dir = f"{data_dir}/{sub_data_dir}"
-                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
 
 
     elif scenario == "llm_ne_constant_5":
        for population_size in [1e6, 1.5e6]: 
             for mutation_rate in [1e-9, 5e-9]:
                 for recombination_rate in [1e-9]:
-                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate)
+                    sim_func = partial(simulate_parameterized_tree_sequence, population_size=population_size, mutation_rate=mutation_rate, recombination_rate=recombination_rate, samples=n_individuals)
                     sub_data_dir = f"ne_constant_{population_size:.4e}_{mutation_rate:.1e}_{recombination_rate:.1e}" # popsize precision to .4e from .0e for few sizes
                     save_dir = f"{data_dir}/{sub_data_dir}"
-                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                    process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
 
 
 
@@ -558,11 +572,11 @@ if __name__ == '__main__':
                     for recombination_rate in [1e-8, 5e-8]:
                         if mutation_rate == 5e-8 and recombination_rate == 5e-8:
                             continue
-                        sim_func = partial(simulate_parameterized_tree_sequence, demography=create_sawtooth_demogaphy_object(Ne=population_size,magnitue=magnitude), mutation_rate=mutation_rate, recombination_rate=recombination_rate)
+                        sim_func = partial(simulate_parameterized_tree_sequence, demography=create_sawtooth_demogaphy_object(Ne=population_size,magnitue=magnitude), mutation_rate=mutation_rate, recombination_rate=recombination_rate, samples=n_individuals)
                         
                         sub_data_dir = f"ne_sawtooth_{magnitude}_{population_size:.0e}_{mutation_rate:.1e}_{recombination_rate:.1e}"
                         save_dir = f"{data_dir}/{sub_data_dir}"
-                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
 
     elif scenario == "llm_island_3pop":
         for migration_rate in [0.05, 0.2]:
@@ -571,16 +585,30 @@ if __name__ == '__main__':
                     for recombination_rate in [1e-8, 5e-8]:
                         if mutation_rate == 5e-8 and recombination_rate == 5e-8:
                             continue
-                        samples = {0: 15, 1: 5, 2: 5}
+                        if n_individuals == 5:
+                            samples = {0: 3, 1: 1, 2: 1}
+                        elif n_individuals == 25:
+                            samples = {0: 15, 1: 5, 2: 5}
+                        else:
+                            samples = {0: int(n_individuals*0.6), 1: int(n_individuals*0.2), 2: int(n_individuals*0.2)}
+                            total_samples = sum(samples.values())
+                            if total_samples != n_individuals:
+                                diff = n_individuals - total_samples
+                                samples[0] += diff  # Adjust the first population to match n_individuals
+                            
                         island_demography = msprime.Demography.island_model([population_size, population_size/2, population_size/2], migration_rate=migration_rate)
                         sim_func = partial(simulate_parameterized_tree_sequence, island_demography=island_demography, samples=samples, mutation_rate=mutation_rate, recombination_rate=recombination_rate)
                         sub_data_dir = f"island_3pop_{migration_rate}_{population_size:.0e}_{mutation_rate:.1e}_{recombination_rate:.1e}"
                         save_dir = f"{data_dir}/{sub_data_dir}"
-                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
 
     
     # not this one, takes too long
     elif scenario == "llm_island_5pop":
+        print("Starting 5-population island model simulations...")
+        if n_individuals != 25:
+            print("Skipping llm_island_5pop scenario as n_individuals is not 25.")
+            exit(1)
         for migration_rate in [0.05, 0.2]:
             for population_size in [1e4, 2e4, 4e4]:
                 for mutation_rate in [1e-8, 5e-8]:
@@ -592,7 +620,7 @@ if __name__ == '__main__':
                         sim_func = partial(simulate_parameterized_tree_sequence, island_demography=island_demography, samples=samples, mutation_rate=mutation_rate, recombination_rate=recombination_rate)
                         sub_data_dir = f"island_5pop_{migration_rate}_{population_size:.0e}_{mutation_rate:.1e}_{recombination_rate:.1e}"
                         save_dir = f"{data_dir}/{sub_data_dir}"
-                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
     
 
     elif scenario == "llm_hard_sweeps":
@@ -607,9 +635,9 @@ if __name__ == '__main__':
                         sim_func = partial(
                             simulate_parameterized_tree_sequence, population_size=population_size,
                             mutation_rate=mutation_rate, recombination_rate=recombination_rate,
-                            hard_sweep=True, selection_coefficient=selection_coefficient, selection_position=selection_position)
+                            hard_sweep=True, selection_coefficient=selection_coefficient, selection_position=selection_position, samples=n_individuals)
                         sub_data_dir = f"hard_sweeps_{selection_coefficient}_{selection_position:.1e}_{population_size:.0e}_{mutation_rate:.1e}_{recombination_rate:.1e}"
                         save_dir = f"{data_dir}/{sub_data_dir}"
-                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots)
+                        process_batches(num_samples, start_batch, batch_size, num_processes, save_dir, pivot_A, pivot_B, sim_func, randomize_pivots, n_individuals)
     
 
