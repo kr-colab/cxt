@@ -531,10 +531,29 @@ def setup_cxt_model(model_type: str = "broad"):
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
+    
+    
 
-    elif model_type == "narrow":
-        # extend here when you have a narrow config
-        raise NotImplementedError("setup_cxt_model('narrow') is not implemented yet.")
+
+    elif model_type == "broad+adapter":
+        import sys, importlib
+        from cxt.train2_n10 import LitTokenFreeDecoder
+        IE_NEW = 10
+        ckpt_path = "/home/kkor/cxt/cxt/lightning_logs/version_26/checkpoints/epoch=2-step=792.ckpt"
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        gpt_config = TokenFreeDecoderConfig(device="cpu")
+        model = LitTokenFreeDecoder.load_from_checkpoint(
+            ckpt_path,
+            gpt_config=gpt_config,
+            ie_new=IE_NEW,               
+            adapter_bottleneck=32,
+            adapter_dropout=0.0,
+            new_mask_index=0,
+            training_config=1,
+        )
+        return model.model
 
 
 

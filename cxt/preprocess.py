@@ -243,10 +243,10 @@ def scenario_from_path(p: pathlib.Path, base: pathlib.Path) -> str:
     return str(rel) if str(rel) != "." else "."
 
 # ---- worker ----
-def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool]) -> str:
+def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool, int]) -> str:
     (
         idx, f_str, base_str, out_root_str, split, window_size,
-        num_pairs, global_seed, skip_existing
+        num_pairs, global_seed, skip_existing, simplify_first_n_samples
     ) = args_tuple
 
     f = pathlib.Path(f_str)
@@ -265,6 +265,9 @@ def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool]) -> 
     # load ts
     try:
         ts = tskit.load(str(f))
+        if simplify_first_n_samples > 0 and ts.num_samples > simplify_first_n_samples:
+            samples = list(range(simplify_first_n_samples))
+            ts = ts.simplify(samples=samples)
     except Exception as e:
         return f"[error] load failed {f}: {e}"
 
@@ -307,6 +310,8 @@ def main():
     ap.add_argument("--out_subdir", default="processed", help="Output directory name under base_dir")
     ap.add_argument("--window_size", type=int, default=2000)
     ap.add_argument("--num_pairs", type=int, default=200)
+    ap.add_argument("--simplify_first_n_samples", type=int, default=50,
+                    help="If >0, simplify TSs to this many samples first")
     ap.add_argument("--train_ratio", type=float, default=0.9)
     ap.add_argument("--global_seed", type=int, default=12345)
     ap.add_argument("--skip_existing", action="store_true")
@@ -340,6 +345,7 @@ def main():
             int(args.num_pairs),
             int(args.global_seed),
             bool(args.skip_existing),
+            int(args.simplify_first_n_samples)
         ))
 
     # Run in parallel

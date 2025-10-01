@@ -39,7 +39,7 @@ if torch.cuda.is_available():
 import gc
 import copy
 import threading
-from typing import List, Sequence, Tuple, Optional
+from typing import Callable, List, Sequence, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -76,10 +76,10 @@ def calculate_window_sfs_vectorized(
 #        assert b[1] - b[0] == 1e6, "Each block must be 1e6 bp"
 
 
-def basic_filtering(block_gm, block_positions):
+def basic_filtering(block_gm, block_positions, num_samples=50):
     mask = np.logical_or(
         np.any(block_gm >= 2, axis=0),     # filters out non-biallelic
-        block_gm.sum(0) >= 50)             # filters out fixed sites
+        block_gm.sum(0) >= num_samples)             # filters out fixed sites
     block_gm = block_gm[:, ~mask]
     block_positions = block_positions[~mask]
     return block_gm, block_positions
@@ -135,6 +135,9 @@ def _build_sources_serial(tasks, progress=True):
     return np.stack(Xs, axis=0)
 
 def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length=1e6, step_size=2000):
+
+    num_samples, num_sites = block_gm.shape
+
     # masks per site
     xor_mask  = (block_gm[pivot_id_A] ^ block_gm[pivot_id_B]).astype(bool)
     xnor_mask = ~xor_mask
@@ -149,20 +152,20 @@ def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length
     # helper that tolerates empty sets
     def sfs_for(pos, f, win_mult):
         if pos.size == 0:
-            return np.zeros((int(np.ceil(1e6/2000)), 50), dtype=np.int32)
+            return np.zeros((int(np.ceil(1e6/2000)), num_samples), dtype=np.int32)
         return calculate_window_sfs_vectorized(
             positions=pos.astype(np.float32),
             pivot_frequencies=f.astype(np.int32),
             window_size=step_size * win_mult,
             sequence_length=sequence_length,
-            num_samples=50,
+            num_samples=num_samples,
             step_size=step_size,
         )
 
     w_multipliers = (2, 8, 32, 64)
     n_w = int(np.ceil(sequence_length/step_size))  # 500
-    Xs_xor  = np.zeros((len(w_multipliers), n_w, 50), dtype=np.int32)
-    Xs_xnor = np.zeros((len(w_multipliers), n_w, 50), dtype=np.int32)
+    Xs_xor  = np.zeros((len(w_multipliers), n_w, num_samples), dtype=np.int32)
+    Xs_xnor = np.zeros((len(w_multipliers), n_w, num_samples), dtype=np.int32)
 
     for i, w in enumerate(w_multipliers):
         Xs_xor[i]  = sfs_for(pos_xor,  freqs_xor,  w)
@@ -232,7 +235,7 @@ def _iter_chunks(N, B):
 
 def to_log_times(yhat, TIMES=np.linspace(3, 17, 324), rep_mode=False):
     if rep_mode:
-        return TIMES[yhat[:, :, 1:].cpu().numpy() - 2]
+        return TIMES[yhat[:, :, 1:].cpu().numpy() - 2].transpose(1, 0, 2)
     return TIMES[yhat[:, 1:].cpu().numpy() - 2]
 
 
@@ -371,6 +374,7 @@ def generate(
     cache_matching: bool = False,
     progress: bool = True,
     decode_bar: bool = False,
+    adapter=None,
 ):
     """
     Deterministic, cache-safe generate():
@@ -380,6 +384,7 @@ def generate(
       - Validates vocab size stays constant during decode
     """
     model.eval()
+
     N = src.size(0)
     gens = _make_generators(N, device, base_seed)
     outs = []
@@ -401,6 +406,7 @@ def generate(
         chunk_iter = tqdm(chunk_iter, total=(N + B - 1)//B, desc=f"Generate @ {device}", leave=False)
 
     with torch.inference_mode():
+
         for start in chunk_iter:
             end = min(start + B, N)
             batch_src = src[start:end].to(device, non_blocking=True)
@@ -412,6 +418,9 @@ def generate(
                 ensure_cache_B(model, curB)  # idempotent; cheap if size unchanged
 
             # Prime cache before decode
+            if adapter is not None:
+                batch_src = adapter(batch_src)
+
             _ = model(batch_src, None, attn_mask, calculate_loss=False, use_cache=True, position=0)
             idx = torch.ones(curB, 1, dtype=torch.long, device=device)
 
@@ -497,6 +506,7 @@ def _thread_worker_generate(
     out_index: int,
     progress: bool,
     decode_bar: bool,
+    adapter: torch.nn.Module | None = None
 ):
     # bind CUDA context to this thread/device
     try:
@@ -523,6 +533,7 @@ def _thread_worker_generate(
                 cache_matching=cache_matching,
                 progress=progress,
                 decode_bar=decode_bar,
+                adapter=adapter,
             )
         out_list[out_index] = y.to("cpu", non_blocking=True)
 
@@ -542,6 +553,7 @@ def multi_gpu_generate(
     cache_matching: bool = False,
     progress: bool = True,
     decode_bar: bool = False,
+    adapter: torch.nn.Module | None = None,
 ):
     """
     Run `generate` concurrently across multiple GPUs.
@@ -554,7 +566,7 @@ def multi_gpu_generate(
             model, src, B=B_per_device,
             device="cuda" if torch.cuda.is_available() else "cpu",
             top_k=top_k, base_seed=base_seed, cache_matching=cache_matching,
-            progress=progress, decode_bar=decode_bar
+            progress=progress, decode_bar=decode_bar, adapter=adapter
         )
 
     N = src.size(0)
@@ -586,6 +598,7 @@ def multi_gpu_generate(
                 out_index=i,
                 progress=progress,
                 decode_bar=decode_bar,
+                adapter=adapter,
             ),
             daemon=True,
         )
@@ -633,181 +646,6 @@ def multi_gpu_generate(
     return Y
 
 
-#----------------not used shadowed below
-# --------------------------
-# Core translate (multi-GPU + mp build)
-# --------------------------
-def translate_from_genotype_matrix(
-        gm,
-        positions,
-        model,
-        one_mb_blocks = [(0e6, 1e6)],
-        pivot_ids = [(0, 1)],
-        sample_ids = np.arange(0, 50),
-        device="cuda", B=24,
-        cache_matching=False,
-        n_reps: int = 15,
-        base_seed: int = 1234,
-        top_k: int = 50,
-        devices: Sequence[str] | None = None,
-        B_per_device: int | None = None,
-        progress: bool = True,
-        decode_bar: bool = False,
-        build_workers: int = 0  # 0/1 => serial; >1 => ProcessPoolExecutor
-    ):
-    """
-    Returns yhat of shape (n_items, n_reps, ...).
-    n_items = len(one_mb_blocks) * len(pivot_ids)
-    """
-    #check_blocks(one_mb_blocks)
-    gm_samples = gm[sample_ids, :]
-
-    a, b = one_mb_blocks[0]
-    sequence_length = int(b - a)
-    step_size =sequence_length // 500  # 2000 for 1e6
-
-    # ---------- build sources ----------
-    tasks, index_map = _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids, sequence_length, step_size)
-
-    if build_workers and build_workers > 1:
-        X_base = _build_sources_parallel(tasks, progress=progress, max_workers=build_workers)
-    else:
-        X_base = _build_sources_serial(tasks, progress=progress)
-
-    
-    """
-    N = X_base.shape[0]
-    B_local = B if B_per_device is None else B_per_device
-    tensor_device = device if not (devices and len(devices) > 1) else "cpu"
-
-    if n_reps <= 1:
-        X = torch.tensor(X_base, dtype=torch.float32, device=tensor_device)
-        if devices and len(devices) > 1:
-            yhat = multi_gpu_generate(
-                model=model, src=X, devices=devices, B_per_device=B_local,
-                top_k=top_k, base_seed=base_seed, cache_matching=cache_matching,
-                progress=progress, decode_bar=decode_bar
-            )
-        else:
-            y_list = []
-            loop = _iter_chunks(N, B)
-            if progress:
-                loop = tqdm(loop, total=(N + B - 1)//B, desc="Batches", leave=False)
-            for s, e in loop:
-                y_chunk = generate(model, X[s:e], B=min(B, e - s), device=device,
-                                   top_k=top_k, base_seed=base_seed + s,
-                                   cache_matching=cache_matching,
-                                   progress=False, decode_bar=decode_bar)
-                y_list.append(y_chunk)
-            yhat = torch.cat(y_list, dim=0)
-        return to_log_times(yhat, rep_mode=False), index_map
-
-    # replicate for reps
-    X_rep = np.repeat(X_base, repeats=n_reps, axis=0)
-    X_rep = X_rep.reshape(N, n_reps, *X_base.shape[1:])
-    X_rep = X_rep.transpose(1, 0, *range(2, X_rep.ndim)).reshape(N * n_reps, *X_base.shape[1:])
-
-    X_t = torch.tensor(X_rep, dtype=torch.float32, device=tensor_device)
-    if devices and len(devices) > 1:
-        Y = multi_gpu_generate(
-            model=model, src=X_t, devices=devices, B_per_device=B_local,
-            top_k=top_k, base_seed=base_seed, cache_matching=cache_matching,
-            progress=progress, decode_bar=decode_bar
-        )
-    else:
-        y_chunks = []
-        M = X_t.shape[0]
-        loop = _iter_chunks(M, B)
-        if progress:
-            loop = tqdm(loop, total=(M + B - 1)//B, desc="Batches", leave=False)
-        for s, e in loop:
-            y_chunk = generate(model, X_t[s:e], B=min(B, e - s), device=device,
-                               top_k=top_k, base_seed=base_seed + s,
-                               cache_matching=cache_matching,
-                               progress=False, decode_bar=decode_bar)
-            y_chunks.append(y_chunk)
-        Y = torch.cat(y_chunks, dim=0)
-
-    # undo interleave → [N, n_reps, ...]
-    Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1).contiguous()
-    return to_log_times(Y, rep_mode=True), index_map
-    """
-
-    # ---------- after building X_base ----------
-    N = X_base.shape[0]
-    B_local = B if B_per_device is None else B_per_device
-    tensor_device = device if not (devices and len(devices) > 1) else "cpu"
-
-    # Match model dtype (prevents Half/Float mismatch), keep on CPU and pin (A+B)
-    param_dtype = next(model.parameters()).dtype
-    X_cpu = torch.as_tensor(X_base, dtype=param_dtype, device="cpu")
-    if torch.cuda.is_available():
-        X_cpu = X_cpu.pin_memory()
-
-    # -------- single-rep path (unchanged behavior, but uses pinned CPU tensor) -------
-    if n_reps <= 1:
-        if devices and len(devices) > 1:
-            yhat = multi_gpu_generate(
-                model=model, src=X_cpu, devices=devices, B_per_device=B_local,
-                top_k=top_k, base_seed=base_seed, cache_matching=cache_matching,
-                progress=progress, decode_bar=decode_bar
-            )
-        else:
-            y_list = []
-            loop = _iter_chunks(N, B)
-            if progress:
-                loop = tqdm(loop, total=(N + B - 1)//B, desc="Batches", leave=False)
-            for s, e in loop:
-                y_chunk = generate(
-                    model, X_cpu[s:e], B=min(B, e - s), device=device,
-                    top_k=top_k, base_seed=base_seed + s,
-                    cache_matching=cache_matching, progress=False, decode_bar=decode_bar
-                )
-                y_list.append(y_chunk)
-            yhat = torch.cat(y_list, dim=0)
-        return to_log_times(yhat, rep_mode=False), index_map
-
-    # -------- multi-rep path WITHOUT np.repeat (A) --------
-    # Logical repetition via indices; feed in chunks; still uses your B / B_per_device.
-    #ids = torch.arange(N, dtype=torch.long).repeat_interleave(n_reps)  # [N*n_reps]
-    ids = torch.tile(torch.arange(N, dtype=torch.long), (n_reps,))  # [0..N-1, 0..N-1, ...]
-
-
-    Y_parts = []
-    world = len(devices) if (devices and len(devices) > 1) else 1
-    chunk_size = (B_local if B_per_device is not None else B) * world  # respects your batch sizing
-
-    loop = _iter_chunks(ids.numel(), chunk_size)
-    if progress:
-        loop = tqdm(loop, total=(ids.numel() + chunk_size - 1)//chunk_size,
-                    desc="Batches (reps fused)", leave=False)
-
-    for s, e in loop:
-        sel = ids[s:e]                           # CPU index view
-        X_chunk = X_cpu.index_select(0, sel)     # gather only this chunk (still pinned)
-
-        if devices and len(devices) > 1:
-            Y_part = multi_gpu_generate(
-                model=model, src=X_chunk, devices=devices, B_per_device=B_local,
-                top_k=top_k, base_seed=base_seed + s, cache_matching=cache_matching,
-                progress=False, decode_bar=decode_bar
-            )
-        else:
-            Y_part = generate(
-                model, X_chunk, B=min(B, X_chunk.size(0)), device=device,
-                top_k=top_k, base_seed=base_seed + s,
-                cache_matching=cache_matching, progress=False, decode_bar=decode_bar
-            )
-        Y_parts.append(Y_part)
-
-    Y = torch.cat(Y_parts, dim=0)                                # [N*n_reps, ...]
-    Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1)       # [N, n_reps, ...]
-    return to_log_times(Y.contiguous(), rep_mode=True), index_map
-    
-
-
-    
-    
 
 # --------------------------
 # VCF / TS wrappers (unchanged API + devices + progress)
@@ -831,69 +669,6 @@ def vcf_parser(path):
     haplo = [vcf[c].str.split(r"[|/]", expand=True).astype(int) for c in vcf.columns]
     genotypes = pd.concat(haplo, axis=1).to_numpy(dtype=np.int32)
     return positions, genotypes.T
-
-"""
-def translate_from_vcf(vcf_path, model, one_mb_blocks=[(0e6,1e6)], pivot_ids=[(0,1)],
-                       sample_ids=np.arange(0,50), device="cuda", B=24,
-                       cache_matching=False, n_reps=15, base_seed=1234, top_k=50,
-                       devices: Sequence[str] | None = None, B_per_device: int | None = None,
-                       progress: bool = True, decode_bar: bool = False, build_workers: int = 0):
-    positions, gm = vcf_parser(vcf_path)
-    return translate_from_genotype_matrix(
-        gm=gm, positions=positions, model=model,
-        one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
-        device=device, B=B, cache_matching=cache_matching,
-        n_reps=n_reps, base_seed=base_seed, top_k=top_k,
-        devices=devices, B_per_device=B_per_device,
-        progress=progress, decode_bar=decode_bar, build_workers=build_workers)
-
-
-def translate_from_ts(ts, model, one_mb_blocks=[(0e6,1e6)], pivot_ids=[(0,1)],
-                      sample_ids=np.arange(0,50), device="cuda", B=24,
-                      cache_matching=False, n_reps=15, base_seed=1234, top_k=50,
-                      devices: Sequence[str] | None = None, B_per_device: int | None = None,
-                      progress: bool = True, decode_bar: bool = False, build_workers: int = 0):
-    positions = ts.tables.sites.position
-    gm = ts.genotype_matrix().T
-    return translate_from_genotype_matrix(
-        gm=gm, positions=positions, model=model,
-        one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
-        device=device, B=B, cache_matching=cache_matching,
-        n_reps=n_reps, base_seed=base_seed, top_k=top_k,
-        devices=devices, B_per_device=B_per_device,
-        progress=progress, decode_bar=decode_bar, build_workers=build_workers)
-
-
-def translate(input_data, data_type, model, one_mb_blocks=[(0e6,1e6)], pivot_ids=[(0,1)],
-              sample_ids=np.arange(0,50), device="cuda", B=128, cache_matching=True,
-              n_reps=15, base_seed=1234, top_k=50,
-              devices: Sequence[str] | None = None, B_per_device: int | None = None,
-              progress: bool = True, decode_bar: bool = True, build_workers: int = 8):
-    if data_type == "vcf":
-        return translate_from_vcf(input_data, model, one_mb_blocks, pivot_ids,
-                                  sample_ids, device, B, cache_matching,
-                                  n_reps, base_seed, top_k,
-                                  devices=devices, B_per_device=B_per_device,
-                                  progress=progress, decode_bar=decode_bar, build_workers=build_workers)
-    elif data_type == "ts":
-        return translate_from_ts(input_data, model, one_mb_blocks, pivot_ids,
-                                 sample_ids, device, B, cache_matching,
-                                 n_reps, base_seed, top_k,
-                                 devices=devices, B_per_device=B_per_device,
-                                 progress=progress, decode_bar=decode_bar, build_workers=build_workers)
-    elif data_type == "gm":
-        gm, positions = input_data
-        return translate_from_genotype_matrix(
-            gm=gm, positions=positions, model=model,
-            one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
-            device=device, B=B, cache_matching=cache_matching,
-            n_reps=n_reps, base_seed=base_seed, top_k=top_k,
-            devices=devices, B_per_device=B_per_device,
-            progress=progress, decode_bar=decode_bar, build_workers=build_workers)
-    else:
-        raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")
-"""
-
 
 
 # --------------------------
@@ -1007,6 +782,7 @@ def _proc_worker_generate_fast_mainloop(
     decode_bar: bool,     # ignored in worker (forced False)
     out_queue,
     progress: bool,       # ignored in worker (forced False)
+    adapter: torch.nn.Module | None = None
 ):
     import traceback as _tb
     try:
@@ -1024,7 +800,10 @@ def _proc_worker_generate_fast_mainloop(
         # Build/clone model inside child
         if callable(model_factory_or_none):
             try:
-                mdl = model_factory_or_none("broad")
+                if adapter is not None:
+                    mdl = model_factory_or_none("broad+adapter")
+                else:
+                    mdl = model_factory_or_none("broad")
             except TypeError:
                 mdl = model_factory_or_none()
         else:
@@ -1052,8 +831,9 @@ def _proc_worker_generate_fast_mainloop(
                     top_k=50,
                     base_seed=base_seed + s,
                     cache_matching=cache_matching,
-                    progress=False,         # ← force quiet
+                    progress=decode_bar,         # ← force quiet. Update: not anymore
                     decode_bar=False,       # ← force quiet
+                    adapter=adapter
                 )
                 out_queue.put((s, Y_part.cpu().numpy()))
 
@@ -1083,6 +863,7 @@ def _fast_process_per_gpu_generate(
     model_cpu,
     model_factory_or_none,
     progress: bool = True,     # parent progress bar
+    adapter: torch.nn.Module | None = None
 ):
     """
     Rep-major, process-per-GPU fast path (explicit spawn context).
@@ -1125,7 +906,8 @@ def _fast_process_per_gpu_generate(
                 model_cpu, model_factory_or_none,
                 X_base, ids, shards[rank],
                 B_per_device, base_seed, cache_matching, decode_bar,
-                out_q, False  # workers are always quiet
+                out_q, False,  # workers are always quiet
+                adapter
             ),
         )
         p.start()
@@ -1173,7 +955,7 @@ def translate_from_genotype_matrix(
         model,  # CPU model object
         one_mb_blocks=[(0e6, 1e6)],
         pivot_ids=[(0, 1)],
-        sample_ids=np.arange(0, 50),
+        sample_ids=np.arange(0, 50), # not used anymore
         device="cuda", B=24,
         cache_matching=False,
         n_reps: int = 15,
@@ -1185,6 +967,7 @@ def translate_from_genotype_matrix(
         decode_bar: bool = False,
         build_workers: int = 0,
         use_fast_process_per_gpu: bool = False,  # NEW
+        adapter: torch.nn.Module | None = None
     ):
     """
     Returns yhat of shape (n_items, n_reps, ...).
@@ -1193,6 +976,7 @@ def translate_from_genotype_matrix(
       multi_gpu_generate, generate, to_log_times, vcf_parser.
     """
     import numpy as _np, torch
+    sample_ids = np.arange(gm.shape[0])
     gm_samples = gm[sample_ids, :]
     a, b = one_mb_blocks[0]
     sequence_length = int(b - a)
@@ -1222,7 +1006,7 @@ def translate_from_genotype_matrix(
             yhat = multi_gpu_generate(
                 model=model, src=X_cpu_t, devices=devices, B_per_device=B_local,
                 top_k=top_k, base_seed=base_seed, cache_matching=cache_matching,
-                progress=progress, decode_bar=decode_bar
+                progress=progress, decode_bar=decode_bar, adapter=adapter
             )
         else:
             y_list = []
@@ -1232,9 +1016,9 @@ def translate_from_genotype_matrix(
                 loop = _tqdm(loop, total=(N + B - 1)//B, desc="Batches", leave=False)
             for s, e in loop:
                 y_chunk = generate(
-                    model, X_cpu_t[s:e], B=min(B, e - s), device=device,
+                    model.to(device), X_cpu_t[s:e], B=min(B, e - s), device=device,
                     top_k=top_k, base_seed=base_seed + s,
-                    cache_matching=cache_matching, progress=False, decode_bar=decode_bar
+                    cache_matching=cache_matching, progress=False, decode_bar=decode_bar, adapter=adapter
                 )
                 y_list.append(y_chunk)
             yhat = torch.cat(y_list, dim=0)
@@ -1259,9 +1043,10 @@ def translate_from_genotype_matrix(
             model_cpu=model,                 # fallback only
             model_factory_or_none=model_factory,
             progress=progress,
+            adapter=adapter
         )
         Y = Y_flat.reshape(n_reps, N, *Y_flat.shape[1:]).transpose(0, 1).contiguous()
-        return to_log_times(Y, rep_mode=True), index_map
+        return to_log_times(Y, rep_mode=True), index_map # replicate dimension first
 
     # Default safe path (threaded multi-GPU or single GPU)
     ids = torch.tile(torch.arange(N, dtype=torch.long), (n_reps,))
@@ -1280,19 +1065,19 @@ def translate_from_genotype_matrix(
             Y_part = multi_gpu_generate(
                 model=model, src=X_chunk, devices=devices, B_per_device=B_local,
                 top_k=top_k, base_seed=base_seed + s, cache_matching=cache_matching,
-                progress=False, decode_bar=decode_bar
+                progress=True, decode_bar=decode_bar, adapter=adapter ## set progress True here
             )
         else:
             Y_part = generate(
-                model, X_chunk, B=min(B, X_chunk.size(0)), device=device,
+                model.to(device), X_chunk, B=min(B, X_chunk.size(0)), device=device,
                 top_k=top_k, base_seed=base_seed + s,
-                cache_matching=cache_matching, progress=False, decode_bar=decode_bar
+                cache_matching=cache_matching, progress=False, decode_bar=decode_bar, adapter=adapter
             )
         Y_parts.append(Y_part)
 
     Y = torch.cat(Y_parts, dim=0)
     Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1)
-    return to_log_times(Y.contiguous(), rep_mode=True), index_map
+    return to_log_times(Y.contiguous(), rep_mode=True), index_map # replicate dimension first
 
 
 def translate_from_vcf(
@@ -1313,6 +1098,7 @@ def translate_from_vcf(
     decode_bar: bool = False,
     build_workers: int = 0,
     use_fast_process_per_gpu: bool = False,  # NEW
+    adapter: torch.nn.Module | None = None
 ):
     positions, gm = vcf_parser(vcf_path)
     return translate_from_genotype_matrix(
@@ -1322,7 +1108,7 @@ def translate_from_vcf(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu,
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
     )
 
 
@@ -1344,6 +1130,7 @@ def translate_from_ts(
     decode_bar: bool = False,
     build_workers: int = 0,
     use_fast_process_per_gpu: bool = False,  # NEW
+    adapter: torch.nn.Module | None = None
 ):
     positions = ts.tables.sites.position
     gm = ts.genotype_matrix().T
@@ -1354,7 +1141,7 @@ def translate_from_ts(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu,
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
     )
 
 
@@ -1377,6 +1164,7 @@ def translate(
     decode_bar: bool = True,
     build_workers: int = 8,
     use_fast_process_per_gpu: bool = False,  # NEW
+    adapter: torch.nn.Module | None = None
 ):
     if data_type == "vcf":
         return translate_from_vcf(
@@ -1384,7 +1172,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu,
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
         )
     elif data_type == "ts":
         return translate_from_ts(
@@ -1392,7 +1180,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu,
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
         )
     elif data_type == "gm":
         gm, positions = input_data
@@ -1403,7 +1191,7 @@ def translate(
             n_reps=n_reps, base_seed=base_seed, top_k=top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu,
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
         )
     else:
         raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")
