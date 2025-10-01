@@ -681,7 +681,6 @@ def get_tmrca_for(index_map, tmrca, block, pivot):
         raise ValueError(f"(block={block}, pivot={pivot}) not found in index_map")
     return tmrca[idx[0]]
 
-
 # --------------------------
 # Model loader (as you had)
 # --------------------------
@@ -699,7 +698,6 @@ def load_model(config, model_path, device="cuda"):
     model.eval()
     return model
 
-
 # --------------------------
 # Ground-truth utility
 # --------------------------
@@ -711,8 +709,6 @@ def ground_truth_tmrca(ts, block, pivot_A, pivot_B, window_size=2000):
     s, e = start // window_size, end // window_size
     vals = tmrca[s:e]
     return np.log(np.clip(vals, 1e-12, None)) if len(vals) else np.full(((end - start) // window_size,), np.log(1e4))
-
-
 
 
 def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size):
@@ -733,13 +729,6 @@ def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_le
             tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B, sequence_length, step_size))
             index_map.append((b_idx, p_idx))
     return tasks, np.array(index_map, dtype=np.int32)
-
-
-
-
-
-
-
 
 
 # ============================================================
@@ -763,7 +752,6 @@ def _get_spawn_ctx():
         if mp.get_start_method(allow_none=True) is None:
             mp.set_start_method("spawn", force=True)
         return mp
-
 
 # ─────────────────────────────────────────────────────────────
 # Worker: always quiet (no tqdm, no decode bars)
@@ -846,8 +834,6 @@ def _proc_worker_generate_fast_mainloop(
     except Exception as e:
         e._traceback = _tb.format_exc()
         out_queue.put(("__error__", rank, str(e), e._traceback))
-
-
 
 # ─────────────────────────────────────────────────────────────
 # Parent: explicit spawn ctx + single notebook progress bar
@@ -949,6 +935,30 @@ def _fast_process_per_gpu_generate(
 
 
 
+from cxt.utils import stochastic_diversity_bias_correction_v2
+def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivot_pairs, mutation_rate):
+
+    corrected_tmrca_all = np.zeros_like(tmrca)
+    for b_idx, (block_start, block_end) in enumerate(blocks):
+        block_mask = (positions >= block_start) & (positions < block_end)
+        block_pos_abs = positions[block_mask]
+        
+        block_gm = gm[:, block_mask]
+        block_pos_rel = block_pos_abs - block_start
+
+        index_map_block = np.where(index_map[:,0] == b_idx)[0]
+        predictions = tmrca[:, index_map_block, :]
+
+        corrected_tmrca_all[:, index_map_block, :] = stochastic_diversity_bias_correction_v2(
+            genotype_matrix=block_gm, 
+            mutation_rate=mutation_rate,
+            predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
+            pivot_pairs=np.array(pivot_pairs),
+            rng=np.random.default_rng(1234),
+            sequence_length=(block_end - block_start),
+        )
+        return corrected_tmrca_all
+
 def translate_from_genotype_matrix(
         gm,
         positions,
@@ -967,7 +977,8 @@ def translate_from_genotype_matrix(
         decode_bar: bool = False,
         build_workers: int = 0,
         use_fast_process_per_gpu: bool = False,  # NEW
-        adapter: torch.nn.Module | None = None
+        adapter: torch.nn.Module | None = None,
+        mutation_rate:float = None
     ):
     """
     Returns yhat of shape (n_items, n_reps, ...).
@@ -1077,8 +1088,18 @@ def translate_from_genotype_matrix(
 
     Y = torch.cat(Y_parts, dim=0)
     Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1)
-    return to_log_times(Y.contiguous(), rep_mode=True), index_map # replicate dimension first
-
+    Y = to_log_times(Y.contiguous(), rep_mode=True)
+    
+    if mutation_rate is not None:
+        Y = apply_tmrca_bias_correction_v2(
+            tmrca=Y,
+            gm=gm_samples,
+            positions=positions,
+            index_map=index_map,
+            blocks=blocks,
+            pivot_pairs=pivot_pairs,
+            mutation_rate=mutation_rate)
+    return Y, index_map
 
 def translate_from_vcf(
     vcf_path,
@@ -1098,7 +1119,8 @@ def translate_from_vcf(
     decode_bar: bool = False,
     build_workers: int = 0,
     use_fast_process_per_gpu: bool = False,  # NEW
-    adapter: torch.nn.Module | None = None
+    adapter: torch.nn.Module | None = None,
+    mutation_rate: float | None = None
 ):
     positions, gm = vcf_parser(vcf_path)
     return translate_from_genotype_matrix(
@@ -1108,7 +1130,7 @@ def translate_from_vcf(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
     )
 
 
@@ -1130,7 +1152,8 @@ def translate_from_ts(
     decode_bar: bool = False,
     build_workers: int = 0,
     use_fast_process_per_gpu: bool = False,  # NEW
-    adapter: torch.nn.Module | None = None
+    adapter: torch.nn.Module | None = None,
+    mutation_rate: float | None = None
 ):
     positions = ts.tables.sites.position
     gm = ts.genotype_matrix().T
@@ -1141,7 +1164,7 @@ def translate_from_ts(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
     )
 
 
@@ -1164,7 +1187,8 @@ def translate(
     decode_bar: bool = True,
     build_workers: int = 8,
     use_fast_process_per_gpu: bool = False,  # NEW
-    adapter: torch.nn.Module | None = None
+    adapter: torch.nn.Module | None = None,
+    mutation_rate: float | None = None
 ):
     if data_type == "vcf":
         return translate_from_vcf(
@@ -1172,7 +1196,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
         )
     elif data_type == "ts":
         return translate_from_ts(
@@ -1180,7 +1204,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
         )
     elif data_type == "gm":
         gm, positions = input_data
@@ -1191,7 +1215,7 @@ def translate(
             n_reps=n_reps, base_seed=base_seed, top_k=top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
         )
     else:
         raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")
