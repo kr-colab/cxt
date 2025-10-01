@@ -715,10 +715,10 @@ def ground_truth_tmrca(ts, block, pivot_A, pivot_B, window_size=2000):
 
 
 
-def _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids, sequence_length, step_size):
+def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size):
     tasks = []
     index_map = []
-    for b_idx, (block_start, block_end) in enumerate(one_mb_blocks):
+    for b_idx, (block_start, block_end) in enumerate(blocks):
         block_mask = (positions >= block_start) & (positions < block_end)
         block_pos_abs = positions[block_mask]
         block_gm = gm_samples[:, block_mask]
@@ -729,7 +729,7 @@ def _prepare_build_tasks(gm_samples, positions, one_mb_blocks, pivot_ids, sequen
         # optional: stricter, symmetric filtering
         block_gm, block_pos_rel = basic_filtering(block_gm, block_pos_rel)
 
-        for p_idx, (pivot_A, pivot_B) in enumerate(pivot_ids):
+        for p_idx, (pivot_A, pivot_B) in enumerate(pivot_pairs):
             tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B, sequence_length, step_size))
             index_map.append((b_idx, p_idx))
     return tasks, np.array(index_map, dtype=np.int32)
@@ -953,8 +953,8 @@ def translate_from_genotype_matrix(
         gm,
         positions,
         model,  # CPU model object
-        one_mb_blocks=[(0e6, 1e6)],
-        pivot_ids=[(0, 1)],
+        blocks=[(0e6, 1e6)],
+        pivot_pairs=[(0, 1)],
         sample_ids=np.arange(0, 50), # not used anymore
         device="cuda", B=24,
         cache_matching=False,
@@ -978,13 +978,13 @@ def translate_from_genotype_matrix(
     import numpy as _np, torch
     sample_ids = np.arange(gm.shape[0])
     gm_samples = gm[sample_ids, :]
-    a, b = one_mb_blocks[0]
+    a, b = blocks[0]
     sequence_length = int(b - a)
     step_size = sequence_length // 500
 
     # Build sources (mp or serial)
     tasks, index_map = _prepare_build_tasks(
-        gm_samples, positions, one_mb_blocks, pivot_ids, sequence_length, step_size
+        gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size
     )
     if build_workers and build_workers > 1:
         X_base = _build_sources_parallel(tasks, progress=progress, max_workers=build_workers)
@@ -1083,8 +1083,8 @@ def translate_from_genotype_matrix(
 def translate_from_vcf(
     vcf_path,
     model,
-    one_mb_blocks=[(0e6, 1e6)],
-    pivot_ids=[(0, 1)],
+    blocks=[(0e6, 1e6)],
+    pivot_pairs=[(0, 1)],
     sample_ids=np.arange(0, 50),
     device="cuda",
     B=24,
@@ -1103,7 +1103,7 @@ def translate_from_vcf(
     positions, gm = vcf_parser(vcf_path)
     return translate_from_genotype_matrix(
         gm=gm, positions=positions, model=model,
-        one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
+        blocks=blocks, pivot_pairs=pivot_pairs, sample_ids=sample_ids,
         device=device, B=B, cache_matching=cache_matching,
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
@@ -1115,8 +1115,8 @@ def translate_from_vcf(
 def translate_from_ts(
     ts,
     model,
-    one_mb_blocks=[(0e6, 1e6)],
-    pivot_ids=[(0, 1)],
+    blocks=[(0e6, 1e6)],
+    pivot_pairs=[(0, 1)],
     sample_ids=np.arange(0, 50),
     device="cuda",
     B=24,
@@ -1136,7 +1136,7 @@ def translate_from_ts(
     gm = ts.genotype_matrix().T
     return translate_from_genotype_matrix(
         gm=gm, positions=positions, model=model,
-        one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
+        blocks=blocks, pivot_pairs=pivot_pairs, sample_ids=sample_ids,
         device=device, B=B, cache_matching=cache_matching,
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
@@ -1149,8 +1149,8 @@ def translate(
     input_data,
     data_type,
     model,
-    one_mb_blocks=[(0e6, 1e6)],
-    pivot_ids=[(0, 1)],
+    blocks=[(0e6, 1e6)],
+    pivot_pairs=[(0, 1)],
     sample_ids=np.arange(0, 50),
     device="cuda",
     B=128,
@@ -1168,7 +1168,7 @@ def translate(
 ):
     if data_type == "vcf":
         return translate_from_vcf(
-            input_data, model, one_mb_blocks, pivot_ids, sample_ids,
+            input_data, model, blocks, pivot_pairs, sample_ids,
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
@@ -1176,7 +1176,7 @@ def translate(
         )
     elif data_type == "ts":
         return translate_from_ts(
-            input_data, model, one_mb_blocks, pivot_ids, sample_ids,
+            input_data, model, blocks, pivot_pairs, sample_ids,
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
@@ -1186,7 +1186,7 @@ def translate(
         gm, positions = input_data
         return translate_from_genotype_matrix(
             gm=gm, positions=positions, model=model,
-            one_mb_blocks=one_mb_blocks, pivot_ids=pivot_ids, sample_ids=sample_ids,
+            blocks=blocks, pivot_pairs=pivot_pairs, sample_ids=sample_ids,
             device=device, B=B, cache_matching=cache_matching,
             n_reps=n_reps, base_seed=base_seed, top_k=top_k,
             devices=devices, B_per_device=B_per_device,
