@@ -934,6 +934,24 @@ def _fast_process_per_gpu_generate(
     return Y_cpu
 
 
+from cxt.utils import stochastic_diversity_bias_correction
+def apply_tmrca_bias_correction(tmrca, ts, index_map, blocks, pivot_pairs, mutation_rate):
+
+    corrected_tmrca_all = np.zeros_like(tmrca)
+    for b_idx, (block_start, block_end) in enumerate(blocks):
+
+        index_map_block = np.where(index_map[:,0] == b_idx)[0]
+        predictions = tmrca[:, index_map_block, :]
+
+        corrected_tmrca_all[:, index_map_block, :] = stochastic_diversity_bias_correction(
+            tree_sequence=ts.keep_intervals([[block_start, block_end]]),
+            mutation_rate=mutation_rate,
+            predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
+            pivot_pairs=np.array(pivot_pairs),
+            rng=np.random.default_rng(1234),
+        )
+    return corrected_tmrca_all
+
 
 from cxt.utils import stochastic_diversity_bias_correction_v2
 def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivot_pairs, mutation_rate):
@@ -957,7 +975,7 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
             rng=np.random.default_rng(1234),
             sequence_length=(block_end - block_start),
         )
-        return corrected_tmrca_all
+    return corrected_tmrca_all
 
 def translate_from_genotype_matrix(
         gm,
@@ -1033,7 +1051,18 @@ def translate_from_genotype_matrix(
                 )
                 y_list.append(y_chunk)
             yhat = torch.cat(y_list, dim=0)
-        return to_log_times(yhat, rep_mode=False), index_map
+
+        Y = to_log_times(yhat, rep_mode=False)
+        if mutation_rate is not None:
+            Y = apply_tmrca_bias_correction_v2(
+                tmrca=Y.unsequeeze(0),
+                gm=gm_samples,
+                positions=positions,
+                index_map=index_map,
+                blocks=blocks,
+                pivot_pairs=pivot_pairs,
+                mutation_rate=mutation_rate)
+        return Y, index_map
 
     # --- multi-rep paths ---
     world = len(devices) if (devices and len(devices) > 1) else 1
@@ -1057,7 +1086,17 @@ def translate_from_genotype_matrix(
             adapter=adapter
         )
         Y = Y_flat.reshape(n_reps, N, *Y_flat.shape[1:]).transpose(0, 1).contiguous()
-        return to_log_times(Y, rep_mode=True), index_map # replicate dimension first
+        Y = to_log_times(Y, rep_mode=True)
+        if mutation_rate is not None:
+            Y = apply_tmrca_bias_correction_v2(
+                tmrca=Y,
+                gm=gm_samples,
+                positions=positions,
+                index_map=index_map,
+                blocks=blocks,
+                pivot_pairs=pivot_pairs,
+                mutation_rate=mutation_rate)
+        return Y, index_map
 
     # Default safe path (threaded multi-GPU or single GPU)
     ids = torch.tile(torch.arange(N, dtype=torch.long), (n_reps,))
@@ -1089,7 +1128,7 @@ def translate_from_genotype_matrix(
     Y = torch.cat(Y_parts, dim=0)
     Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1)
     Y = to_log_times(Y.contiguous(), rep_mode=True)
-    
+
     if mutation_rate is not None:
         Y = apply_tmrca_bias_correction_v2(
             tmrca=Y,
