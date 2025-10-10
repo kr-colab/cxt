@@ -5,8 +5,10 @@ from scipy.interpolate import interp1d
 import numpy as np
 import torch
 
-#TIMES = np.linspace(3, 14, 256)
-TIMES = np.linspace(3, 17, 324)
+GRID_SIZE = 324
+MAX_FOLD_CHANGE = 1e4
+TIMES = np.linspace(3, 17, GRID_SIZE) # target space is log-TMRCA
+LOG_RESIDUAL_GRID = np.linspace(-np.log(MAX_FOLD_CHANGE), np.log(MAX_FOLD_CHANGE), GRID_SIZE) # target space is log-residuals of TMRCA (log(TMRCA) - log(E[TMRCA])
 
 
 retrieve_site_positions = lambda ts: np.array([site.position for site in ts.sites()])
