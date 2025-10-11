@@ -609,6 +609,41 @@ def setup_cxt_model(model_type: str = "broad"):
             training_config=1,
         )
         return model.model
+    
+    elif model_type == "narrow":
+        import sys, importlib
+        NarrowModelConfig = importlib.import_module("cxt.config").NarrowModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+        sys.modules['__main__'].TokenFreeDecoderConfig = NarrowModelConfig
+        TokenFreeDecoderConfig = NarrowModelConfig
+
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_31/checkpoints/epoch=5-step=4692.ckpt"
+
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
+    
+    elif model_type == "broad_w200":
+        import sys, importlib
+
+        # Lazy import to avoid top-level cycles
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+
+        # replicate your original setup
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        config.window_size = 200
+        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_29/checkpoints/epoch=1-step=944.ckpt"
+
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
 
 
 
@@ -618,10 +653,3 @@ def discretize(sequence, population_time):
     indices = np.clip(indices, 0, len(population_time) - 1)
     return indices
 
-def discrete_ground_truth(ts, a, b, sequence_length=1e6, window_size=2000):
-    ytrue = np.log(interpolate_tmrcas(
-        ts.simplify(samples=[a, b]),
-        window_size=window_size, sequence_length=sequence_length
-    ))
-    ytrue = discretize(ytrue, TIMES)
-    return TIMES[ytrue]

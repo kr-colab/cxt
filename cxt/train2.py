@@ -128,7 +128,7 @@ if __name__ == "__main__":
         device: str = "cuda"
         batch_size: int = config['training']['batch_size']
 
-    
+    """
     # broad model
     @dataclass
     class TokenFreeDecoderConfig:
@@ -143,7 +143,7 @@ if __name__ == "__main__":
         n_head: int = 4
         device: str = "cuda"
         batch_size: int = config['training']['batch_size']
-    
+    """
 
     
 

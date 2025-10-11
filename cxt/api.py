@@ -323,57 +323,5 @@ def translate(
 
 
 
-def get_mutation_count(gm, pivot_pairs=[(0, 1), (0, 2)]):
-    mutation_counts = np.zeros(len(pivot_pairs))
-    for i, (pivot_A, pivot_B) in enumerate(pivot_pairs):
-        gm_piv = gm[[pivot_A, pivot_B]]
-        mask = gm_piv.sum(0) >= 1
-        gm_piv = gm_piv[:, mask]
-        mutation_count = ((gm_piv[0] ^ gm_piv[1]) >= 1).sum()
-        mutation_counts[i] = mutation_count
-    return mutation_counts
 
 
-def stochastic_diversity_bias_correction_v2(
-    genotype_matrix: np.ndarray,
-    mutation_rate: float,
-    predictions: np.ndarray,
-    pivot_pairs: np.ndarray,
-    return_intercept: bool = False,
-    rng: np.random.Generator = None,
-    sequence_length = 1e6,
-) -> (np.ndarray, np.ndarray):
-    r"""
-    Correct the predicted TMRCAs such that expected diversity matches
-    observed diversity, for a given mutation rate. This is done stochastically,
-    by using the fact that under the model,
-
-        mutation_count ~ Poisson(2 * correction * mu * \sum_i TMRCA_i * window_size_i)
-    
-    the posterior (given improper constant prior) is,
-
-        correction ~ Gamma(mutation_count + 1, 2 * mu * \sum_i TMRCA_i * window_size_i)
-
-    and sampling accordingly (e.g. iid for each TMRCA sample, pivot pair).
-    
-    The input predictions are assumed to have dimensions 
-    `(replicates, pairs, windows)`.
-    """
-    assert predictions.ndim == 3
-    assert pivot_pairs.ndim == 2
-    assert pivot_pairs.shape[0] == predictions.shape[1]
-    assert pivot_pairs.shape[1] == 2
-    if rng is None: rng = np.random.default_rng()
-    mutation_count = get_mutation_count(genotype_matrix, pivot_pairs)
-    corrected = []
-    intercept = []
-    for log_tmrca in predictions:
-        rate = 2 * np.exp(log_tmrca).mean(axis=-1) * mutation_rate * sequence_length
-        correction = rng.gamma(shape=mutation_count + 1, scale=1 / rate)
-        corrected.append(log_tmrca + np.log(correction)[:, np.newaxis])
-        intercept.append(
-            np.log(np.exp(log_tmrca).mean(axis=-1) * correction)[:, np.newaxis]
-        )
-    corrected = np.stack(corrected)
-    intercept = np.stack(intercept)
-    return corrected if not return_intercept else (corrected, intercept)

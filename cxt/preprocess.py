@@ -8,11 +8,11 @@ import multiprocessing as mp
 from cxt.utils import xor, xnor
 
 from cxt.utils import retrieve_site_positions, calculate_window_sfs_vectorized
-def ts2X_vectorized_bichan(ts, window_size=4000, step_size=2000,
-                           pivot_A=0, pivot_B=1, offset=0):
+def ts2X_vectorized_bichan(ts, window_size=2000, step_size=2000,
+                           pivot_A=0, pivot_B=1, sequence_length=1e6, offset=0):
     site_positions = retrieve_site_positions(ts) - offset
     gm = ts.genotype_matrix().T  # [samples, sites]
-
+    step_size = window_size 
     # mask invariants / bad sites once
     bad = (gm >= 2).any(0) | (gm.sum(0) >= ts.num_samples)
     gm = gm[:, ~bad]
@@ -25,7 +25,7 @@ def ts2X_vectorized_bichan(ts, window_size=4000, step_size=2000,
     w_xor  = freq * xor_mask
     w_xnor = freq * (1 - xor_mask)
 
-    seq_len = ts.sequence_length  # avoid hardcoding 1e6
+    seq_len = sequence_length  # avoid hardcoding 1e6
     w_multipliers = np.array([2, 8, 32, 64])
     n_steps = int(np.ceil(seq_len / step_size))
 
@@ -49,15 +49,15 @@ def ts2X_vectorized_bichan(ts, window_size=4000, step_size=2000,
 
     return Xs  # cast to float16 later if needed
 
-def process_X(ts, pairs, window_size=2000, dtype=np.float16):
+def process_X(ts, pairs, window_size=2000, sequence_length=1e6, dtype=np.float16):
     P = len(pairs)
     # probe shape once
     a0, b0 = pairs[0]
-    X0 = ts2X_vectorized_bichan(ts, window_size=window_size, pivot_A=a0, pivot_B=b0)
+    X0 = ts2X_vectorized_bichan(ts, window_size=window_size, pivot_A=a0, pivot_B=b0, sequence_length=sequence_length)
     out = np.empty((P,) + X0.shape, dtype=X0.dtype)
     out[0] = X0
     for k, (pa, pb) in enumerate(pairs[1:], start=1):
-        out[k] = ts2X_vectorized_bichan(ts, window_size=window_size, pivot_A=pa, pivot_B=pb)
+        out[k] = ts2X_vectorized_bichan(ts, window_size=window_size, pivot_A=pa, pivot_B=pb, sequence_length=sequence_length)
     return out.astype(dtype, copy=False)
 
 
@@ -69,6 +69,7 @@ def process_y(
     ts,
     pairs,
     window_size=2000,
+    sequence_length: Optional[int] = None,
     transform=None,
     dtype=np.float16,
     interp_fn=None,
@@ -87,7 +88,7 @@ def process_y(
 
     # Probe once to get L
     a0, b0 = pairs[0]
-    y0 = np.asarray(interp_fn(ts, window_size=window_size, sample_a=a0, sample_b=b0, **interp_kwargs))
+    y0 = np.asarray(interp_fn(ts, window_size=window_size, sequence_length=sequence_length, sample_a=a0, sample_b=b0, **interp_kwargs))
     if y0.ndim != 1:
         raise ValueError(f"interp_fn must return a 1D array; got shape {y0.shape}")
     L = y0.shape[0]
@@ -97,7 +98,7 @@ def process_y(
 
     # Fill the rest
     for k, (pa, pb) in enumerate(pairs[1:], start=1):
-        yk = np.asarray(interp_fn(ts, window_size=window_size, sample_a=pa, sample_b=pb, **interp_kwargs))
+        yk = np.asarray(interp_fn(ts, window_size=window_size, sequence_length=sequence_length, sample_a=pa, sample_b=pb, **interp_kwargs))
         if yk.shape[0] != L:
             raise ValueError(
                 f"Inconsistent window count from interp_fn: pair 0 -> {L}, pair {k} -> {yk.shape[0]}.\n"
@@ -245,7 +246,7 @@ def scenario_from_path(p: pathlib.Path, base: pathlib.Path) -> str:
 # ---- worker ----
 def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool, int]) -> str:
     (
-        idx, f_str, base_str, out_root_str, split, window_size,
+        idx, f_str, base_str, out_root_str, split, window_size, sequence_length,
         num_pairs, global_seed, skip_existing, simplify_first_n_samples
     ) = args_tuple
 
@@ -276,8 +277,8 @@ def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool, int]
 
     try:
         pairs = choose_pairs(ts, num_pairs, seed=pair_seed)
-        X = process_X(ts, pairs, window_size=window_size, dtype=np.float16)
-        y = process_y(ts, pairs, window_size=window_size, transform=np.log, dtype=np.float16)
+        X = process_X(ts, pairs, window_size=window_size, sequence_length=sequence_length, dtype=np.float16)
+        y = process_y(ts, pairs, window_size=window_size, sequence_length=sequence_length, transform=np.log, dtype=np.float16)
 
         np.save(out_dir / "X.npy", X)
         np.save(out_dir / "y.npy", y)
@@ -290,7 +291,7 @@ def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool, int]
             "scenario": scenario,
             "num_pairs": int(num_pairs),
             "window_size": int(window_size),
-            "sequence_length": int(ts.sequence_length),
+            "sequence_length": int(sequence_length),
             "num_samples": int(ts.num_samples),
             "dtype": "float16",
             "y_transform": "log",
@@ -309,6 +310,7 @@ def main():
     ap.add_argument("--base_dir", required=True, help="Root where your simulated TSs live")
     ap.add_argument("--out_subdir", default="processed", help="Output directory name under base_dir")
     ap.add_argument("--window_size", type=int, default=2000)
+    ap.add_argument("--sequence_length", type=int, default=1e6)  # not used currently
     ap.add_argument("--num_pairs", type=int, default=200)
     ap.add_argument("--simplify_first_n_samples", type=int, default=50,
                     help="If >0, simplify TSs to this many samples first")
@@ -342,6 +344,7 @@ def main():
             str(out_root),
             split,
             int(args.window_size),
+            int(args.sequence_length),
             int(args.num_pairs),
             int(args.global_seed),
             bool(args.skip_existing),

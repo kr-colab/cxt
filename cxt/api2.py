@@ -130,8 +130,8 @@ def _build_sources_serial(tasks, progress=True):
     if progress:
         it = tqdm(it, total=len(tasks), desc="Building sources", leave=False)
     Xs = []
-    for (b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B) in it:
-        Xs.append(build_src(block_pos, block_gm, pivot_A, pivot_B))
+    for (b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size) in it:
+        Xs.append(build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size))
     return np.stack(Xs, axis=0)
 
 def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length=1e6, step_size=2000):
@@ -1225,7 +1225,7 @@ def translate(
     progress: bool = True,
     decode_bar: bool = True,
     build_workers: int = 8,
-    use_fast_process_per_gpu: bool = False,  # NEW
+    use_fast_process_per_gpu: bool = True,  
     adapter: torch.nn.Module | None = None,
     mutation_rate: float | None = None
 ):
