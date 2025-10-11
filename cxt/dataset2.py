@@ -1,22 +1,42 @@
 import os, numpy as np, torch
 from torch.utils.data import Dataset, DataLoader
 from cxt.utils import TIMES
+from cxt.utils import LOG_RESIDUAL_GRID
 
 def discretize(sequence, population_time):
     idx = np.searchsorted(population_time, sequence, side="right") - 1
     np.clip(idx, 0, len(population_time) - 1, out=idx)
     return idx  # keep as numpy array
 
+def discretize_residuals(log_predicted_times, log_residual_grid):
+    r"""
+    Discretize log TMRCA residuals (deviations from the mean). If $T_i$ is the TMRCA (not logged)
+    $in window $i, then we compute the log residual as the relative different relative to the mean
+    TMRCA. That is, $log(R_i)$ where $R_i = T_i N / (\sum_j^N T_j)$. Note that "TMRCA" is equivalent
+    with expected nucleotide diversity as far as the residual is concerned, because the factor of
+    $2 \mu$ cancels. The log residual is then discretized on a grid centered at zero.
+    """
+    #assert log_predicted_times.squeeze().ndim == 1
+    log_expected_diversity = np.log(np.mean(np.exp(log_predicted_times)))
+    assert np.isfinite(log_expected_diversity)
+    log_residuals = log_predicted_times - log_expected_diversity
+    grid_index = np.digitize(log_residuals, log_residual_grid, right=True) - 1
+    np.clip(grid_index 0, len(log_residual_grid) - 1, out=grid_index)
+    return grid_index  # keep as numpy array
+
 class PairDataset(Dataset):
     """
     Each item is ONE pair from ONE TS.
     We prebuild a global index of (X_path, y_path, p_idx) ONCE in file-major order.
     Call shuffle_files(seed) to change the order of FILE BLOCKS without touching disk.
+    If `return_residuals` is True, then outputs are centered (in log space) around the
+    log expected TMRCA.
     """
-    def __init__(self, root, split="train", mmap=True):
+    def __init__(self, root, split="train", mmap=True, return_residuals=False):
         self.root = root
         self.split = split
         self.mmap = mmap
+        self.return_residuals = return_residuals
 
         self.items = []          # list of (X_path, y_path, p_idx)  [canonical, file-major]
         self._file_spans = []    # list of (start_idx, length) per file, into `items`
@@ -114,7 +134,10 @@ class PairDataset(Dataset):
 
         # labels
         yi = torch.tensor(y[p_idx])
-        yi = torch.tensor(discretize(yi, TIMES)).long() + 2
+        if self.return_residuals:
+            yi = torch.tensor(discretize_residuals(yi, LOG_RESIDUAL_GRID)).long() + 2
+        else:
+            yi = torch.tensor(discretize(yi, TIMES)).long() + 2
         yi = torch.cat([torch.tensor([1]), yi])
 
         return Xi, yi
