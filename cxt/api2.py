@@ -233,14 +233,15 @@ def _iter_chunks(N, B):
         yield s, e
 
 from cxt.utils import LOG_RESIDUAL_GRID, TIMES
+
 def to_log_times(yhat, rep_mode=False, residual_model=False):
     if residual_model:
-        TIMES = LOG_RESIDUAL_GRID
+        time = LOG_RESIDUAL_GRID
     else:
-        TIMES = TIMES
+        time = TIMES
     if rep_mode:
-        return TIMES[yhat[:, :, 1:].cpu().numpy() - 2].transpose(1, 0, 2)
-    return TIMES[yhat[:, 1:].cpu().numpy() - 2]
+        return time[yhat[:, :, 1:].cpu().numpy() - 2].transpose(1, 0, 2)
+    return time[yhat[:, 1:].cpu().numpy() - 2]
 
 
 def generate_causal_mask(seq_len, full_attention_n=None, device="cpu"):
