@@ -17,12 +17,30 @@ def discretize_residuals(log_predicted_times, log_residual_grid):
     $2 \mu$ cancels. The log residual is then discretized on a grid centered at zero.
     """
     #assert log_predicted_times.squeeze().ndim == 1
-    log_expected_diversity = np.log(np.mean(np.exp(log_predicted_times)))
+    #log_expected_diversity = np.log(np.mean(np.exp(log_predicted_times)))
+    #log_expected_diversity = np.log(np.mean(np.exp(np.asarray(log_predicted_times))))
+    #assert np.isfinite(log_expected_diversity)
+    #log_residuals = log_predicted_times - log_expected_diversity
+    #grid_index = np.digitize(log_residuals, log_residual_grid, right=True) - 1
+    #np.clip(grid_index, 0, len(log_residual_grid) - 1, out=grid_index)
+    #return grid_index  # keep as numpy array
+
+    # ensure numpy array in float32 (handles torch.Tensor / bfloat16)
+    if hasattr(log_predicted_times, "detach"):
+        arr = log_predicted_times.detach().cpu().numpy().astype(np.float32)
+    else:
+        arr = np.asarray(log_predicted_times, dtype=np.float32)
+
+    # stable log(mean(exp(x))) to prevent overflow
+    m = arr.max()
+    log_expected_diversity = float(m + np.log(np.exp(arr - m).mean()))
     assert np.isfinite(log_expected_diversity)
-    log_residuals = log_predicted_times - log_expected_diversity
+
+    log_residuals = arr - log_expected_diversity
     grid_index = np.digitize(log_residuals, log_residual_grid, right=True) - 1
-    np.clip(grid_index 0, len(log_residual_grid) - 1, out=grid_index)
-    return grid_index  # keep as numpy array
+    np.clip(grid_index, 0, len(log_residual_grid) - 1, out=grid_index)
+    return grid_index
+
 
 class PairDataset(Dataset):
     """
@@ -134,6 +152,7 @@ class PairDataset(Dataset):
 
         # labels
         yi = torch.tensor(y[p_idx])
+
         if self.return_residuals:
             yi = torch.tensor(discretize_residuals(yi, LOG_RESIDUAL_GRID)).long() + 2
         else:

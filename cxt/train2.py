@@ -103,6 +103,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_epochs', type=int, default=10, help='Number of epochs to train')
     parser.add_argument('--learning_rate', type=float, default=3e-4, help='Learning rate for the optimizer')
     parser.add_argument('--test_batches', type=int, default=100, help='Tiny batch size of 1000')
+    parser.add_argument('--residual_target', action='store_true', help='Use residual target')
 
     args = parser.parse_args()
     dataset_path = args.dataset_path
@@ -112,6 +113,7 @@ if __name__ == "__main__":
     learning_rate = args.learning_rate
     test_batches = args.test_batches
     config['training']['max_lr'] = learning_rate
+    residual_target = args.residual_target
 
     # narrow model
     @dataclass
@@ -128,7 +130,7 @@ if __name__ == "__main__":
         device: str = "cuda"
         batch_size: int = config['training']['batch_size']
 
-    """
+    
     # broad model
     @dataclass
     class TokenFreeDecoderConfig:
@@ -143,7 +145,7 @@ if __name__ == "__main__":
         n_head: int = 4
         device: str = "cuda"
         batch_size: int = config['training']['batch_size']
-    """
+    
 
     
 
@@ -169,14 +171,14 @@ if __name__ == "__main__":
     from torch.utils.data import DistributedSampler
 
 
-    train_dataset = PairDataset(root=dataset_path, split="train", mmap=True)
+    train_dataset = PairDataset(root=dataset_path, split="train", mmap=True, return_residuals=residual_target)
     #sampler = DistributedSampler(train_dataset, shuffle=True, drop_last=True)
 
     #train_dataset.shuffle_files(seed=1234)  # O(#files), no disk I/O
     #train_dataset = ShuffleBufferDataset(train_dataset, buffer_size=4096*8, seed=1234)
 
     #loader = DataLoader(ds, batch_size=196, shuffle=False, num_workers=32, drop_last=True, prefetch_factor=4)
-    test_dataset = PairDataset(root=dataset_path, split="test", mmap=True)
+    test_dataset = PairDataset(root=dataset_path, split="test", mmap=True, return_residuals=residual_target)
     #test_dataset = ShuffleBufferDataset(test_dataset, buffer_size=4096*8, seed=5678)
 
 

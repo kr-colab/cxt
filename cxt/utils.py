@@ -646,6 +646,24 @@ def setup_cxt_model(model_type: str = "broad"):
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
+    elif model_type == "residual_model":
+        import sys, importlib
+
+        # Lazy import to avoid top-level cycles
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+
+        # replicate your original setup
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_46/checkpoints/epoch=1-step=5280.ckpt"
+
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
 
 
 
