@@ -232,8 +232,12 @@ def _iter_chunks(N, B):
         e = min(N, s + B)
         yield s, e
 
-
-def to_log_times(yhat, TIMES=np.linspace(3, 17, 324), rep_mode=False):
+from cxt.utils import LOG_RESIDUAL_GRID, TIMES
+def to_log_times(yhat, rep_mode=False, residual_model=False):
+    if residual_model:
+        TIMES = LOG_RESIDUAL_GRID
+    else:
+        TIMES = TIMES
     if rep_mode:
         return TIMES[yhat[:, :, 1:].cpu().numpy() - 2].transpose(1, 0, 2)
     return TIMES[yhat[:, 1:].cpu().numpy() - 2]
@@ -996,7 +1000,8 @@ def translate_from_genotype_matrix(
         build_workers: int = 0,
         use_fast_process_per_gpu: bool = False,  # NEW
         adapter: torch.nn.Module | None = None,
-        mutation_rate:float = None
+        mutation_rate:float = None,
+        residual_model: bool = False
     ):
     """
     Returns yhat of shape (n_items, n_reps, ...).
@@ -1052,7 +1057,7 @@ def translate_from_genotype_matrix(
                 y_list.append(y_chunk)
             yhat = torch.cat(y_list, dim=0)
 
-        Y = to_log_times(yhat, rep_mode=False)
+        Y = to_log_times(yhat, rep_mode=False, residual_model=residual_model)
         if mutation_rate is not None:
             Y = apply_tmrca_bias_correction_v2(
                 tmrca=Y.unsequeeze(0),
@@ -1086,7 +1091,7 @@ def translate_from_genotype_matrix(
             adapter=adapter
         )
         Y = Y_flat.reshape(n_reps, N, *Y_flat.shape[1:]).transpose(0, 1).contiguous()
-        Y = to_log_times(Y, rep_mode=True)
+        Y = to_log_times(Y, rep_mode=True, residual_model=residual_model)
         if mutation_rate is not None:
             Y = apply_tmrca_bias_correction_v2(
                 tmrca=Y,
@@ -1127,7 +1132,7 @@ def translate_from_genotype_matrix(
 
     Y = torch.cat(Y_parts, dim=0)
     Y = Y.reshape(n_reps, N, *Y.shape[1:]).transpose(0, 1)
-    Y = to_log_times(Y.contiguous(), rep_mode=True)
+    Y = to_log_times(Y.contiguous(), rep_mode=True, residual_model=residual_model)
 
     if mutation_rate is not None:
         Y = apply_tmrca_bias_correction_v2(
@@ -1159,7 +1164,8 @@ def translate_from_vcf(
     build_workers: int = 0,
     use_fast_process_per_gpu: bool = False,  # NEW
     adapter: torch.nn.Module | None = None,
-    mutation_rate: float | None = None
+    mutation_rate: float | None = None,
+    residual_model: bool = False
 ):
     positions, gm = vcf_parser(vcf_path)
     return translate_from_genotype_matrix(
@@ -1169,7 +1175,7 @@ def translate_from_vcf(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
     )
 
 
@@ -1192,7 +1198,8 @@ def translate_from_ts(
     build_workers: int = 0,
     use_fast_process_per_gpu: bool = False,  # NEW
     adapter: torch.nn.Module | None = None,
-    mutation_rate: float | None = None
+    mutation_rate: float | None = None,
+    residual_model: bool = False
 ):
     positions = ts.tables.sites.position
     gm = ts.genotype_matrix().T
@@ -1203,7 +1210,7 @@ def translate_from_ts(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
     )
 
 
@@ -1227,7 +1234,8 @@ def translate(
     build_workers: int = 8,
     use_fast_process_per_gpu: bool = True,  
     adapter: torch.nn.Module | None = None,
-    mutation_rate: float | None = None
+    mutation_rate: float | None = None,
+    residual_model: bool = False,
 ):
     if data_type == "vcf":
         return translate_from_vcf(
@@ -1235,7 +1243,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
         )
     elif data_type == "ts":
         return translate_from_ts(
@@ -1243,7 +1251,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
         )
     elif data_type == "gm":
         gm, positions = input_data
@@ -1254,7 +1262,7 @@ def translate(
             n_reps=n_reps, base_seed=base_seed, top_k=top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
         )
     else:
         raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")

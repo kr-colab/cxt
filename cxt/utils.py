@@ -646,7 +646,7 @@ def setup_cxt_model(model_type: str = "broad"):
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
-    elif model_type == "residual_model":
+    elif model_type == "residual":
         import sys, importlib
 
         # Lazy import to avoid top-level cycles
