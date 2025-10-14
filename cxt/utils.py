@@ -584,7 +584,7 @@ def setup_cxt_model(model_type: str = "broad"):
         config = TokenFreeDecoderConfig(device=device)
         config.batch_size = 1
         #model_path = "/home/kkor/cxt/cxt/lightning_logs/version_5/checkpoints/epoch=2-step=5649.ckpt"
-        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch=1-step=5280.ckpt"
+        model_path = "/sietch_colab/data_share/cxt/models/broad/version_20/checkpoints/epoch=1-step=5280.ckpt"
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
@@ -596,7 +596,7 @@ def setup_cxt_model(model_type: str = "broad"):
         import sys, importlib
         from cxt.train2_n10 import LitTokenFreeDecoder
         IE_NEW = 10
-        ckpt_path = "/home/kkor/cxt/cxt/lightning_logs/version_26/checkpoints/epoch=2-step=792.ckpt"
+        ckpt_path = "/sietch_colab/data_share/cxt/models/broad+adapter/version_26/checkpoints/epoch=2-step=792.ckpt"
         BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
         sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
         TokenFreeDecoderConfig = BroadModelConfig
@@ -622,7 +622,7 @@ def setup_cxt_model(model_type: str = "broad"):
         device = "cpu"
         config = TokenFreeDecoderConfig(device=device)
         config.batch_size = 1
-        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_31/checkpoints/epoch=5-step=4692.ckpt"
+        model_path = "/sietch_colab/data_share/cxt/models/narrow/version_31/checkpoints/epoch=5-step=4692.ckpt"
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
@@ -642,7 +642,7 @@ def setup_cxt_model(model_type: str = "broad"):
         config = TokenFreeDecoderConfig(device=device)
         config.batch_size = 1
         config.window_size = 200
-        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_29/checkpoints/epoch=1-step=944.ckpt"
+        model_path = "/sietch_colab/data_share/cxt/models/broad_w200/version_29/checkpoints/epoch=1-step=944.ckpt"
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
@@ -660,7 +660,7 @@ def setup_cxt_model(model_type: str = "broad"):
         device = "cpu"
         config = TokenFreeDecoderConfig(device=device)
         config.batch_size = 1
-        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_46/checkpoints/epoch=1-step=5280.ckpt"
+        model_path = "/sietch_colab/data_share/cxt/models/residual/version_46/checkpoints/epoch=1-step=5280.ckpt"
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
