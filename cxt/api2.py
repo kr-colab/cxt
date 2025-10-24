@@ -1143,7 +1143,7 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
             predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
             pivot_pairs=np.array(pivot_pairs),
             availability_mask=block_availability_mask,
-            positions=positions,
+            positions=block_pos_rel, ###
             rng=np.random.default_rng(1234),
             sequence_length=(block_end - block_start),
         )
