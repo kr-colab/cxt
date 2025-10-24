@@ -1121,6 +1121,15 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
     for b_idx, (block_start, block_end) in enumerate(blocks):
         block_mask = (positions >= block_start) & (positions < block_end)
         block_pos_abs = positions[block_mask]
+
+        step_size = int((block_end - block_start) // 500)
+        if availability_mask is not None:
+            block_availability = availability_mask[int(block_start):int(block_end)]
+            n = len(block_availability) // step_size
+            block_availability_mask = block_availability[:n * step_size].reshape(n, step_size).mean(axis=1)
+        else:
+            block_availability_mask = None
+
         
         block_gm = gm[:, block_mask]
         block_pos_rel = block_pos_abs - block_start
@@ -1133,7 +1142,7 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
             mutation_rate=mutation_rate,
             predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
             pivot_pairs=np.array(pivot_pairs),
-            availability_mask=availability_mask,
+            availability_mask=block_availability_mask,
             positions=positions,
             rng=np.random.default_rng(1234),
             sequence_length=(block_end - block_start),
