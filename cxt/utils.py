@@ -7,6 +7,7 @@ import torch
 
 GRID_SIZE = 324
 MAX_FOLD_CHANGE = 1e4
+narrowTIMES = np.linspace(3, 14, 6) # target space is log-TMRCA
 TIMES = np.linspace(3, 17, GRID_SIZE) # target space is log-TMRCA
 LOG_RESIDUAL_GRID = np.linspace(-np.log(MAX_FOLD_CHANGE), np.log(MAX_FOLD_CHANGE), GRID_SIZE) # target space is log-residuals of TMRCA (log(TMRCA) - log(E[TMRCA])
 
@@ -459,6 +460,82 @@ def stochastic_diversity_bias_correction(
     intercept = np.stack(intercept)
     return corrected if not return_intercept else (corrected, intercept)
 
+
+def stochastic_diversity_bias_correction(
+    tree_sequence: tskit.TreeSequence,
+    mutation_rate: float,
+    predictions: np.ndarray,        # (R, K, W=500), log TMRCA
+    pivot_pairs: np.ndarray,        # (K, 2)
+    availability_mask: np.ndarray = None,  # (W=500,), fraction available per window
+    window_size: int = 2000,
+    return_intercept: bool = False,
+    rng: np.random.Generator = None,
+):
+    """
+    Availability-aware correction with 1:1 alignment: window == step, W == 500.
+    Scales by available bp per window: available_bp[i] = window_span[i] * availability_mask[i].
+    If no mask is given, assumes full availability (1.0 for all windows).
+    """
+    assert predictions.ndim == 3
+    R, K, W = predictions.shape
+    assert pivot_pairs.shape == (K, 2)
+    if rng is None:
+        rng = np.random.default_rng()
+
+    ts = tree_sequence.trim()
+    seq_len = int(ts.sequence_length)
+
+    # Default mask (full availability)
+    if availability_mask is None:
+        availability_mask = np.ones(W, dtype=float)
+    else:
+        availability_mask = np.asarray(availability_mask, dtype=float)
+        assert availability_mask.shape == (W,), "availability_mask must be length W"
+
+    # Window edges
+    win_starts = np.arange(W, dtype=np.int64) * window_size
+    win_ends   = np.minimum(win_starts + window_size, seq_len).astype(np.int64)
+    win_spans  = (win_ends - win_starts).astype(float)
+    edges = np.r_[win_starts, win_ends[-1]].astype(float)
+
+    # Available bp per window (1:1 with predictions)
+    available_bp = win_spans * availability_mask  # (W,)
+
+    # Observed mutation counts (mask-weighted)
+    obs_per_win = ts.diversity(
+        sample_sets=pivot_pairs,
+        windows=edges,
+        span_normalise=False,
+    )  # (K, W)
+    mutation_count = (obs_per_win * availability_mask[None, :]).sum(axis=1)  # (K,)
+
+    # Expected rate denominator: S = sum_i T * available_bp[i]
+    T = np.exp(predictions)  # (R, K, W)
+    S = (T * available_bp[None, None, :]).sum(axis=-1)  # (R, K)
+
+    corrected = np.empty_like(predictions, dtype=float)
+    intercept = np.empty((R, K, 1), dtype=float)
+
+    for r in range(R):
+        rate = 2.0 * mutation_rate * S[r]
+        safe_rate = np.where(rate > 0, rate, np.inf)
+        shape = mutation_count + 1.0
+        corr = rng.gamma(shape=shape, scale=1.0 / safe_rate)
+        corr = np.where(np.isfinite(corr), corr, 1.0)
+
+        corrected[r] = predictions[r] + np.log(corr)[:, None]
+
+        denom = available_bp.sum()
+        if denom > 0:
+            mean_T_weighted = S[r] / denom
+        else:
+            mean_T_weighted = np.exp(predictions[r]).mean(axis=-1)
+        intercept[r, :, 0] = np.log(mean_T_weighted * corr)
+
+    return corrected if not return_intercept else (corrected, intercept)
+
+
+
 def get_mutation_count(gm, pivot_pairs=[(0, 1), (0, 2)]):
     mutation_counts = np.zeros(len(pivot_pairs))
     for i, (pivot_A, pivot_B) in enumerate(pivot_pairs):
@@ -513,6 +590,228 @@ def stochastic_diversity_bias_correction_v2(
     corrected = np.stack(corrected)
     intercept = np.stack(intercept)
     return corrected if not return_intercept else (corrected, intercept)
+
+
+import numpy as np
+def stochastic_diversity_bias_correction_v2(
+    genotype_matrix: np.ndarray,       # (n_haps, m_sites), 0/1 hap genotypes
+    mutation_rate: float,
+    predictions: np.ndarray,           # (R, K, W), log TMRCA
+    pivot_pairs: np.ndarray,           # (K, 2), hap indices into genotype_matrix
+    return_intercept: bool = False,
+    rng: np.random.Generator = None,
+    sequence_length: int | float = 1_000_000,
+    window_size: int = 2000,
+    availability_mask: np.ndarray | None = None,  # (W,), fraction available per window
+    positions: np.ndarray | None = None,          # (m_sites,), optional
+):
+    r"""
+    Availability-aware stochastic correction for ln(TMRCA) using genotype_matrix.
+    If `positions` is provided, observed pairwise differences are masked exactly
+    per window; otherwise, observed counts are scaled by the total available-span
+    fraction (no positions needed).
+
+    Posterior per (replicate r, pair k):
+        c_{r,k} ~ Gamma(shape = M_k + 1, rate = 2*mu * sum_i T_{r,k,i} * avail_bp[i])
+
+    where:
+        M_k = observed pairwise differences, masked
+        avail_bp[i] = win_span[i] * availability_mask[i]
+    """
+    assert predictions.ndim == 3, "predictions must be (R, K, W)"
+    R, K, W = predictions.shape
+    assert pivot_pairs.shape == (K, 2), "pivot_pairs must be (K,2)"
+    assert genotype_matrix.ndim == 2, "genotype_matrix must be 2D (n_haps, m_sites)"
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # --- availability (optional) ---
+    if availability_mask is None:
+        availability_mask = np.ones(W, dtype=float)
+    else:
+        availability_mask = np.asarray(availability_mask, dtype=float)
+        assert availability_mask.shape == (W,), "availability_mask must be length W"
+
+    # --- window geometry ---
+    seq_len = int(sequence_length)
+    win_starts = np.arange(W, dtype=np.int64) * window_size
+    win_ends   = np.minimum(win_starts + window_size, seq_len).astype(np.int64)
+    win_spans  = (win_ends - win_starts).astype(float)          # (W,)
+    total_span = float(win_spans.sum())
+    avail_bp   = win_spans * availability_mask                  # (W,)
+    total_avail_span = float(avail_bp.sum())
+
+    # --- observed mutation counts per pair (M_k) ---
+    # Path A (exact, needs positions): sum XOR per window, then weight by availability
+    if positions is not None:
+        positions = np.asarray(positions)
+        assert positions.ndim == 1 and positions.shape[0] == genotype_matrix.shape[1], \
+            "positions must be (m_sites,) matching genotype_matrix columns"
+        # window index for each site
+        win_idx = np.floor_divide(positions.astype(np.int64), window_size)
+        win_idx = np.clip(win_idx, 0, W - 1)
+
+        obs_per_win = np.zeros((K, W), dtype=float)
+        G = genotype_matrix
+        for k, (a, b) in enumerate(pivot_pairs):
+            diffs = (G[a] ^ G[b]).astype(np.int8)  # per-site pairwise diff
+            obs_per_win[k] = np.bincount(win_idx, weights=diffs, minlength=W)[:W]
+        mutation_count = (obs_per_win * availability_mask[None, :]).sum(axis=1)  # (K,)
+
+    # Path B (no positions): scale total observed diffs by available-span fraction
+    else:
+        # User-supplied function: total pairwise diffs across *all* sites (unmasked)
+        mutation_count_raw = get_mutation_count(genotype_matrix, pivot_pairs)  # (K,)
+        # Approximate masking assuming uniform site density across span
+        frac_available = (total_avail_span / total_span) if total_span > 0 else 0.0
+        mutation_count = mutation_count_raw * frac_available                     # (K,)
+
+    # --- expected denominator: S_{r,k} = sum_i T_{r,k,i} * avail_bp[i] ---
+    T = np.exp(predictions)                                      # (R, K, W)
+    S = (T * avail_bp[None, None, :]).sum(axis=-1)               # (R, K)
+
+    # --- sample Gamma corrections and apply ---
+    corrected = np.empty_like(predictions, dtype=float)
+    intercept = np.empty((R, K, 1), dtype=float)
+
+    for r in range(R):
+        rate = 2.0 * mutation_rate * S[r]                        # (K,)
+        # Neutral correction if no available span
+        safe_rate = np.where(rate > 0, rate, np.inf)
+        shape = mutation_count + 1.0                             # (K,)
+        corr = rng.gamma(shape=shape, scale=1.0 / safe_rate)     # (K,)
+        corr = np.where(np.isfinite(corr), corr, 1.0)
+
+        corrected[r] = predictions[r] + np.log(corr)[:, None]
+
+        # availability-weighted mean T for intercept reporting
+        if total_avail_span > 0:
+            mean_T_weighted = S[r] / total_avail_span           # (K,)
+        else:
+            mean_T_weighted = np.exp(predictions[r]).mean(axis=-1)
+        intercept[r, :, 0] = np.log(mean_T_weighted * corr)
+
+    return corrected if not return_intercept else (corrected, intercept)
+
+
+import numpy as np
+
+def stochastic_diversity_bias_correction_v2(
+    genotype_matrix: np.ndarray,       # (n_haps, m_sites), 0/1 hap genotypes
+    mutation_rate: float,
+    predictions: np.ndarray,           # (R, K, W), log TMRCA
+    pivot_pairs: np.ndarray,           # (K, 2), hap indices into genotype_matrix
+    return_intercept: bool = False,
+    rng: np.random.Generator = None,
+    sequence_length: int | float = 1_000_000,
+    window_size: int = 2000,
+    availability_mask: np.ndarray | None = None,  # if None -> use simple path
+    positions: np.ndarray | None = None,
+):
+    """
+    If availability_mask is None:
+        Use the simple, sequence-tiling model (matches your original simple v2):
+          - mutation_count = get_mutation_count(genotype_matrix, pivot_pairs)
+          - rate = 2 * mu * mean(T) * sequence_length
+          - intercept uses UNWEIGHTED mean(T)
+
+    Else (availability-aware):
+        Weight windows by span * availability (and optionally per-site masking via positions):
+          - rate = 2 * mu * sum_i T_i * (span_i * availability_i)
+          - intercept uses availability-weighted mean(T) for reporting
+    """
+    assert predictions.ndim == 3
+    R, K, W = predictions.shape
+    assert pivot_pairs.shape == (K, 2)
+    assert genotype_matrix.ndim == 2
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    seq_len = float(sequence_length)
+
+    # -------------------------------
+    # Path 1: Simple (availability_mask is None)
+    # -------------------------------
+    if availability_mask is None:
+        print(f'availablity_mask is None, using simple path')
+        assert predictions.ndim == 3
+        assert pivot_pairs.ndim == 2
+        assert pivot_pairs.shape[0] == predictions.shape[1]
+        assert pivot_pairs.shape[1] == 2
+        if rng is None: rng = np.random.default_rng()
+        mutation_count = get_mutation_count(genotype_matrix, pivot_pairs)
+        corrected = []
+        intercept = []
+        for log_tmrca in predictions:
+            rate = 2 * np.exp(log_tmrca).mean(axis=-1) * mutation_rate * sequence_length
+            correction = rng.gamma(shape=mutation_count + 1, scale=1 / rate)
+            corrected.append(log_tmrca + np.log(correction)[:, np.newaxis])
+            intercept.append(
+                np.log(np.exp(log_tmrca).mean(axis=-1) * correction)[:, np.newaxis]
+            )
+        corrected = np.stack(corrected)
+        intercept = np.stack(intercept)
+        return corrected if not return_intercept else (corrected, intercept)
+
+    # -------------------------------
+    # Path 2: Availability-aware
+    # -------------------------------
+    availability_mask = np.asarray(availability_mask, dtype=float)
+    assert availability_mask.shape == (W,), "availability_mask must be length W"
+
+    # window spans (allow last window truncation)
+    seq_len_int = int(seq_len)
+    win_starts = np.arange(W, dtype=np.int64) * int(window_size)
+    win_ends   = np.minimum(win_starts + int(window_size), seq_len_int).astype(np.int64)
+    win_spans  = (win_ends - win_starts).astype(float)          # (W,)
+    total_span = float(win_spans.sum())
+    avail_bp   = win_spans * availability_mask                  # (W,)
+    total_avail_span = float(avail_bp.sum())
+
+    # mutation counts
+    if positions is not None:
+        positions = np.asarray(positions)
+        assert positions.ndim == 1 and positions.shape[0] == genotype_matrix.shape[1], \
+            "positions must be (m_sites,) matching genotype_matrix columns"
+        win_idx = np.floor_divide(positions.astype(np.int64), int(window_size))
+        win_idx = np.clip(win_idx, 0, W - 1)
+
+        obs_per_win = np.zeros((K, W), dtype=float)
+        G = genotype_matrix
+        for k, (a, b) in enumerate(pivot_pairs):
+            diffs = (G[a] ^ G[b]).astype(np.int8)
+            obs_per_win[k] = np.bincount(win_idx, weights=diffs, minlength=W)[:W]
+        mutation_count = (obs_per_win * availability_mask[None, :]).sum(axis=1)  # (K,)
+    else:
+        mutation_count_raw = get_mutation_count(genotype_matrix, pivot_pairs)    # (K,)
+        frac_available = (total_avail_span / total_span) if total_span > 0 else 0.0
+        mutation_count = mutation_count_raw * frac_available
+
+    # denominator S = sum_i T_i * avail_bp[i]
+    T_all = np.exp(predictions)                               # (R, K, W)
+    S = (T_all * avail_bp[None, None, :]).sum(axis=-1)        # (R, K)
+
+    corrected = np.empty_like(predictions, dtype=float)
+    intercept = np.empty((R, K, 1), dtype=float)
+
+    for r in range(R):
+        rate = 2.0 * mutation_rate * S[r]                     # (K,)
+        safe_rate = np.where(rate > 0, rate, np.inf)
+        corr = rng.gamma(shape=mutation_count + 1.0, scale=1.0 / safe_rate)  # (K,)
+        corr = np.where(np.isfinite(corr), corr, 1.0)
+
+        corrected[r] = predictions[r] + np.log(corr)[:, None]
+
+        if total_avail_span > 0:
+            mean_T_weighted = S[r] / total_avail_span        # (K,)
+        else:
+            mean_T_weighted = T_all[r].mean(axis=-1)         # (K,)
+        intercept[r, :, 0] = np.log(mean_T_weighted * corr)
+
+    return corrected if not return_intercept else (corrected, intercept)
+
 
 
 def coalescence_rates(ancestor_times, time_windows, epsilon=1e-3):
@@ -622,8 +921,11 @@ def setup_cxt_model(model_type: str = "broad"):
         device = "cpu"
         config = TokenFreeDecoderConfig(device=device)
         config.batch_size = 1
-        model_path = "/sietch_colab/data_share/cxt/models/narrow/version_31/checkpoints/epoch=5-step=4692.ckpt"
+        #model_path = "/sietch_colab/data_share/cxt/models/narrow/version_31/checkpoints/epoch=5-step=4692.ckpt"
+        model_path = "/home/kkor/cxt/cxt/lightning_logs/version_47/checkpoints/epoch=5-step=4692.ckpt"
 
+
+    
         model = load_model(config=config, model_path=model_path, device=device)
         return model
     
