@@ -52,10 +52,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # --------------------------
 # SFS + source building
 # --------------------------
+
 def calculate_window_sfs_vectorized(
         positions, pivot_frequencies,
-        window_size=2000, sequence_length=1e6, num_samples=50, step_size=2000):
-    """Memory-efficient vectorized calculation of SFS"""
+        window_size=2000, sequence_length=1e6, num_samples=50, step_size=2000, availability_mask=None,):
     n_windows = int(np.ceil(sequence_length / step_size))
     window_starts = np.arange(n_windows) * step_size
     window_ends = np.minimum(window_starts + window_size, sequence_length)
@@ -66,6 +66,150 @@ def calculate_window_sfs_vectorized(
         window_freqs = pivot_frequencies[site_in_window[:, i]]
         if len(window_freqs) > 0:
             sfs_array[i] = np.bincount(window_freqs, minlength=num_samples)
+    return sfs_array
+
+
+def calculate_window_sfs_vectorized(
+    positions,
+    pivot_frequencies,
+    window_size=2000,
+    sequence_length=1_000_000,
+    num_samples=50,
+    step_size=2000,
+    availability_mask=None,
+):
+    # Number of windows is fixed to 500 to match your current setup
+    n_windows = 500
+
+    # Default: all available if no mask is provided
+    if availability_mask is None:
+        availability_mask = np.ones((n_windows,), dtype=float)
+    else:
+        availability_mask = np.asarray(availability_mask, dtype=float)
+        assert availability_mask.shape == (500,), "availability_mask must be length 500"
+
+    # Window coordinates
+    window_starts = np.arange(n_windows, dtype=np.int64) * step_size
+    window_ends   = np.minimum(window_starts + window_size, sequence_length).astype(np.int64)
+
+    # Step (mask) coordinates — 500 bins by construction
+    step_starts = np.arange(500, dtype=np.int64) * step_size
+    step_ends   = np.minimum(step_starts + step_size, sequence_length).astype(np.int64)
+
+    # Vectorized site->window membership
+    # positions: (m,), window_starts/ends: (n_windows,)
+    # site_in_window: (m, n_windows)
+    site_in_window = (positions[:, None] >= window_starts[None, :]) & \
+                     (positions[:, None] <  window_ends[None,   :])
+
+    # Output (float: we’ll scale by availability)
+    sfs_array = np.zeros((n_windows, num_samples), dtype=int)
+
+    # Precompute per-window available bp via overlap with each step bin
+    # For window i: overlap with all steps j is:
+    #   overlap_ij = max(0, min(window_end[i], step_end[j]) - max(window_start[i], step_start[j]))
+    # available_bp[i] = sum_j overlap_ij * availability_mask[j]
+    # We'll compute this window-by-window to keep memory light (500x500 is fine anyway).
+    for i in range(n_windows):
+        ws, we = window_starts[i], window_ends[i]
+        if we <= ws:  # empty window at the tail, if any
+            continue
+
+        # Overlap with all 500 steps (vectorized)
+        left  = np.maximum(ws, step_starts)
+        right = np.minimum(we, step_ends)
+        overlaps = np.clip(right - left, 0, None).astype(float)  # (500,)
+
+        available_bp = float(np.dot(overlaps, availability_mask))  # sum_j overlap_ij * avail[j]
+
+        # Collect SFS for observed sites in this window
+        if site_in_window[:, i].any():
+            window_freqs = pivot_frequencies[site_in_window[:, i]]
+            # Raw counts of sites per frequency bin (observed, possibly with missing)
+            counts = np.bincount(window_freqs, minlength=num_samples).astype(float)
+        else:
+            counts = np.zeros((num_samples,), dtype=float)
+
+        # Missing-data correction:
+        # scale = window_size / available_bp (if available_bp > 0), else leave zeros
+        if available_bp > 0:
+            scale = window_size / available_bp
+            sfs_array[i, :] = counts * scale
+        else:
+            # No available sequence: keep zeros (or you could set np.nan if preferred)
+            sfs_array[i, :] = 0.0
+
+    return sfs_array
+
+import numpy as np
+
+def calculate_window_sfs_vectorized(
+    positions,
+    pivot_frequencies,
+    window_size=2000,
+    sequence_length=1_000_000,
+    num_samples=50,
+    step_size=2000,
+    availability_mask=None,
+):
+    # --- coerce inputs (and use integer comparison domain) ---
+    positions = np.asarray(positions, dtype=np.int64)
+    pivot_frequencies = np.asarray(pivot_frequencies)
+
+    # Windows identical to the first implementation
+    n_windows = int(np.ceil(sequence_length / step_size))
+    window_starts = np.arange(n_windows, dtype=np.int64) * step_size
+    window_ends   = np.minimum(window_starts + window_size, int(sequence_length)).astype(np.int64)
+
+    # Site->window membership (same boolean logic as the first version)
+    site_in_window = (positions[:, None] >= window_starts[None, :]) & \
+                     (positions[:, None] <  window_ends[None,   :])
+
+    # --- Fast path: no availability -> EXACT behavior match to the first function ---
+    if availability_mask is None:
+        sfs_array = np.zeros((n_windows, num_samples), dtype=int)
+        for i in range(n_windows):
+            window_freqs = pivot_frequencies[site_in_window[:, i]]
+            if len(window_freqs) > 0:
+                sfs_array[i] = np.bincount(window_freqs, minlength=num_samples)
+        return sfs_array
+
+    # --- Masked path (scaled counts; float output) ---
+    availability_mask = np.asarray(availability_mask, dtype=float)
+
+    # Steps are aligned to step_size; require matching length
+    n_steps = int(np.ceil(sequence_length / step_size))
+    if availability_mask.shape != (n_steps,):
+        raise ValueError(f"availability_mask must be length {n_steps}, got {availability_mask.shape}")
+
+    step_starts = np.arange(n_steps, dtype=np.int64) * step_size
+    step_ends   = np.minimum(step_starts + step_size, int(sequence_length)).astype(np.int64)
+
+    sfs_array = np.zeros((n_windows, num_samples), dtype=float)
+
+    for i in range(n_windows):
+        ws, we = window_starts[i], window_ends[i]
+        if we <= ws:
+            continue
+
+        # Overlap of window i with all steps (integer arithmetic; cast for dot)
+        left  = np.maximum(ws, step_starts)
+        right = np.minimum(we, step_ends)
+        overlaps = np.clip(right - left, 0, None).astype(float)  # (n_steps,)
+
+        available_bp = float(np.dot(overlaps, availability_mask))
+
+        if site_in_window[:, i].any():
+            counts = np.bincount(pivot_frequencies[site_in_window[:, i]], minlength=num_samples).astype(float)
+        else:
+            counts = np.zeros((num_samples,), dtype=float)
+
+        if available_bp > 0.0:
+            scale = (we - ws) / available_bp  # window_size / available_bp
+            sfs_array[i, :] = counts * scale
+        else:
+            sfs_array[i, :] = 0.0
+
     return sfs_array
 
 
@@ -94,8 +238,8 @@ def _build_one_src_task(task):
     Returns:
       (b_idx, p_idx, X)
     """
-    b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size = task
-    X = build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size)
+    b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask = task
+    X = build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask)
     return b_idx, p_idx, X
 
 
@@ -130,11 +274,11 @@ def _build_sources_serial(tasks, progress=True):
     if progress:
         it = tqdm(it, total=len(tasks), desc="Building sources", leave=False)
     Xs = []
-    for (b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size) in it:
-        Xs.append(build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size))
+    for (b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask) in it:
+        Xs.append(build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask))
     return np.stack(Xs, axis=0)
 
-def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length=1e6, step_size=2000):
+def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length=1e6, step_size=2000, availability_mask=None):
 
     num_samples, num_sites = block_gm.shape
 
@@ -160,6 +304,7 @@ def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length
             sequence_length=sequence_length,
             num_samples=num_samples,
             step_size=step_size,
+            availability_mask=availability_mask
         )
 
     w_multipliers = (2, 8, 32, 64)
@@ -716,13 +861,23 @@ def ground_truth_tmrca(ts, block, pivot_A, pivot_B, window_size=2000):
     return np.log(np.clip(vals, 1e-12, None)) if len(vals) else np.full(((end - start) // window_size,), np.log(1e4))
 
 
-def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size):
+def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size, availability_mask):
     tasks = []
     index_map = []
+    #for b_idx, (block_start, block_end) in enumerate(blocks):
+    #    block_mask = (positions >= block_start) & (positions < block_end)
+    #    block_pos_abs = positions[block_mask]
+    #    block_gm = gm_samples[:, block_mask]
     for b_idx, (block_start, block_end) in enumerate(blocks):
         block_mask = (positions >= block_start) & (positions < block_end)
         block_pos_abs = positions[block_mask]
         block_gm = gm_samples[:, block_mask]
+        if availability_mask is not None:
+            block_availability = availability_mask[int(block_start):int(block_end)]
+            n = len(block_availability) // step_size
+            block_availability_mask = block_availability[:n * step_size].reshape(n, step_size).mean(axis=1)
+        else:
+            block_availability_mask = None
 
         # block-relative coordinates
         block_pos_rel = block_pos_abs - block_start
@@ -731,7 +886,7 @@ def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_le
         block_gm, block_pos_rel = basic_filtering(block_gm, block_pos_rel)
 
         for p_idx, (pivot_A, pivot_B) in enumerate(pivot_pairs):
-            tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B, sequence_length, step_size))
+            tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B, sequence_length, step_size, block_availability_mask))
             index_map.append((b_idx, p_idx))
     return tasks, np.array(index_map, dtype=np.int32)
 
@@ -940,7 +1095,7 @@ def _fast_process_per_gpu_generate(
 
 
 from cxt.utils import stochastic_diversity_bias_correction
-def apply_tmrca_bias_correction(tmrca, ts, index_map, blocks, pivot_pairs, mutation_rate):
+def apply_tmrca_bias_correction(tmrca, ts, index_map, blocks, pivot_pairs, mutation_rate, availability_mask=None):
 
     corrected_tmrca_all = np.zeros_like(tmrca)
     for b_idx, (block_start, block_end) in enumerate(blocks):
@@ -952,6 +1107,7 @@ def apply_tmrca_bias_correction(tmrca, ts, index_map, blocks, pivot_pairs, mutat
             tree_sequence=ts.keep_intervals([[block_start, block_end]]),
             mutation_rate=mutation_rate,
             predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
+            availability_mask=availability_mask,
             pivot_pairs=np.array(pivot_pairs),
             rng=np.random.default_rng(1234),
         )
@@ -959,7 +1115,7 @@ def apply_tmrca_bias_correction(tmrca, ts, index_map, blocks, pivot_pairs, mutat
 
 
 from cxt.utils import stochastic_diversity_bias_correction_v2
-def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivot_pairs, mutation_rate):
+def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivot_pairs, mutation_rate, availability_mask=None):
 
     corrected_tmrca_all = np.zeros_like(tmrca)
     for b_idx, (block_start, block_end) in enumerate(blocks):
@@ -977,6 +1133,8 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
             mutation_rate=mutation_rate,
             predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
             pivot_pairs=np.array(pivot_pairs),
+            availability_mask=availability_mask,
+            positions=positions,
             rng=np.random.default_rng(1234),
             sequence_length=(block_end - block_start),
         )
@@ -1002,7 +1160,8 @@ def translate_from_genotype_matrix(
         use_fast_process_per_gpu: bool = False,  # NEW
         adapter: torch.nn.Module | None = None,
         mutation_rate:float = None,
-        residual_model: bool = False
+        residual_model: bool = False,
+        availability_mask: np.ndarray | None = None
     ):
     """
     Returns yhat of shape (n_items, n_reps, ...).
@@ -1019,7 +1178,7 @@ def translate_from_genotype_matrix(
 
     # Build sources (mp or serial)
     tasks, index_map = _prepare_build_tasks(
-        gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size
+        gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size, availability_mask
     )
     if build_workers and build_workers > 1:
         X_base = _build_sources_parallel(tasks, progress=progress, max_workers=build_workers)
@@ -1067,7 +1226,8 @@ def translate_from_genotype_matrix(
                 index_map=index_map,
                 blocks=blocks,
                 pivot_pairs=pivot_pairs,
-                mutation_rate=mutation_rate)
+                mutation_rate=mutation_rate,
+                availability_mask=availability_mask)
         return Y, index_map
 
     # --- multi-rep paths ---
@@ -1101,6 +1261,7 @@ def translate_from_genotype_matrix(
                 index_map=index_map,
                 blocks=blocks,
                 pivot_pairs=pivot_pairs,
+                availability_mask=availability_mask,
                 mutation_rate=mutation_rate)
         return Y, index_map
 
@@ -1143,6 +1304,7 @@ def translate_from_genotype_matrix(
             index_map=index_map,
             blocks=blocks,
             pivot_pairs=pivot_pairs,
+            availability_mask=availability_mask,
             mutation_rate=mutation_rate)
     return Y, index_map
 
@@ -1166,7 +1328,8 @@ def translate_from_vcf(
     use_fast_process_per_gpu: bool = False,  # NEW
     adapter: torch.nn.Module | None = None,
     mutation_rate: float | None = None,
-    residual_model: bool = False
+    residual_model: bool = False,
+    availability_mask: np.ndarray | None = None
 ):
     positions, gm = vcf_parser(vcf_path)
     return translate_from_genotype_matrix(
@@ -1176,7 +1339,7 @@ def translate_from_vcf(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model, availability_mask=availability_mask
     )
 
 
@@ -1200,7 +1363,8 @@ def translate_from_ts(
     use_fast_process_per_gpu: bool = False,  # NEW
     adapter: torch.nn.Module | None = None,
     mutation_rate: float | None = None,
-    residual_model: bool = False
+    residual_model: bool = False,
+    availability_mask: np.ndarray | None = None
 ):
     positions = ts.tables.sites.position
     gm = ts.genotype_matrix().T
@@ -1211,7 +1375,7 @@ def translate_from_ts(
         n_reps=n_reps, base_seed=base_seed, top_k=top_k,
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
+        use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model, availability_mask=availability_mask
     )
 
 
@@ -1237,6 +1401,7 @@ def translate(
     adapter: torch.nn.Module | None = None,
     mutation_rate: float | None = None,
     residual_model: bool = False,
+    availability_mask: np.ndarray | None = None
 ):
     if data_type == "vcf":
         return translate_from_vcf(
@@ -1244,7 +1409,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model, availability_mask=availability_mask
         )
     elif data_type == "ts":
         return translate_from_ts(
@@ -1252,7 +1417,7 @@ def translate(
             device, B, cache_matching, n_reps, base_seed, top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model, availability_mask=availability_mask
         )
     elif data_type == "gm":
         gm, positions = input_data
@@ -1263,7 +1428,7 @@ def translate(
             n_reps=n_reps, base_seed=base_seed, top_k=top_k,
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
-            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model
+            use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate, residual_model=residual_model, availability_mask=availability_mask
         )
     else:
         raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")
