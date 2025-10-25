@@ -208,7 +208,22 @@ def calculate_window_sfs_vectorized(
             scale = (we - ws) / available_bp  # window_size / available_bp
             sfs_array[i, :] = counts * scale
         else:
-            sfs_array[i, :] = 0.0
+            sfs_array[i, :] = np.nan
+
+    # --- Adjacent-window interpolation (linear, per SFS bin) ---
+    if np.isnan(sfs_array).any():
+        for k in range(num_samples):
+            y = sfs_array[:, k]
+            mask = np.isnan(y)
+            if mask.any():
+                if (~mask).any():
+                    x_good = np.flatnonzero(~mask)
+                    y_good = y[~mask]
+                    y[mask] = np.interp(np.flatnonzero(mask), x_good, y_good)  # edge values are held constant
+                else:
+                    # all missing in this column -> fall back to zeros
+                    y[:] = 0.0
+            sfs_array[:, k] = y
 
     return sfs_array
 
@@ -1143,9 +1158,9 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
             predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
             pivot_pairs=np.array(pivot_pairs),
             availability_mask=block_availability_mask,
-            positions=None, ###
+            positions=block_pos_rel,
+            window_size=step_size,
             rng=np.random.default_rng(1234),
-            sequence_length=(block_end - block_start),
         )
     return corrected_tmrca_all
 
