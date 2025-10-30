@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class NarrowModelConfig:
     num_samples: int = 50
     sample_scale_embd: int = 2 
-    output_dim: int = 256+2
+    output_dim: int = 324+2#256+2
     n_embd: int = 400
     combined_dim: int = 1001
     n_layer: int = 6
@@ -14,6 +14,7 @@ class NarrowModelConfig:
     n_head: int = 4
     device: str = 'cuda'
     batch_size: int = 1225
+    mask_singletons: bool = True
 
 
 @dataclass
@@ -29,3 +30,4 @@ class BroadModelConfig:
     n_head: int = 4
     device: str = "cuda"
     batch_size: int = 1225
+    mask_singletons: bool = True

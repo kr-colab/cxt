@@ -243,11 +243,84 @@ def scenario_from_path(p: pathlib.Path, base: pathlib.Path) -> str:
     rel = p.relative_to(base).parent
     return str(rel) if str(rel) != "." else "."
 
+def _percent_missing_per_window(missing_mask, window_size, step_size, sequence_length):
+    """
+    Fast rolling window sums using cumulative sum. Returns fraction in [0,1].
+    missing_mask: length=sequence_length, 1=missing, 0=present
+    Windows: [k*step_size, k*step_size + window_size)
+    """
+    n_steps = int(np.ceil(sequence_length / step_size))
+    window_starts = np.arange(n_steps, dtype=int) * step_size
+    window_ends = np.minimum(window_starts + window_size, sequence_length)
+
+    # cumulative sum with a leading zero for easy range sums
+    c = np.zeros(sequence_length + 1, dtype=np.int64)
+    c[1:] = np.cumsum(missing_mask, dtype=np.int64)
+
+    # sum of missing within each window = c[end] - c[start]
+    sums = c[window_ends] - c[window_starts]
+    lens = (window_ends - window_starts).astype(np.int64)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        frac = sums / np.maximum(lens, 1)
+    return frac
+
+def missingness_by_window_scales(
+    missing_mask: np.ndarray,
+    base_window: int,
+    step_size: int,
+    multipliers: np.ndarray,
+    sequence_length: int,
+) -> np.ndarray:
+    """
+    For each multiplier m, compute average missingness over windows of size
+    w_m = m * base_window, sampled every `step_size`.
+
+    Returns: array of shape (len(multipliers), n_steps)
+    """
+    n_steps = int(np.ceil(sequence_length / step_size))
+    out = np.zeros((len(multipliers), n_steps), dtype=np.float32)
+    for i, m in enumerate(multipliers):
+        w_m = int(m) * int(base_window)
+        out[i] = _percent_missing_per_window(
+            missing_mask, window_size=w_m, step_size=step_size, sequence_length=sequence_length
+        ).astype(np.float32)
+    return out
+
+def bitmask_to_intervals(bitmask):
+    changepoints = np.flatnonzero(bitmask[1:] != bitmask[:-1])
+    changepoints = np.append(np.append(0, changepoints + 1), bitmask.size)
+    bedmask = []
+    for s, e in zip(changepoints[:-1], changepoints[1:]):
+        if bitmask[s]: bedmask.append([s, e]) 
+    return np.stack(bedmask)
+
+def process_X_with_bitmask(ts, pairs, window_size, sequence_length, dtype, unaccessible_bitmask_subset):
+    ts_masked = ts.delete_intervals(bitmask_to_intervals(unaccessible_bitmask_subset))
+    X = process_X(ts_masked, pairs=pairs, window_size=window_size, sequence_length=sequence_length, dtype=dtype)
+
+    w_multipliers = np.array([2, 8, 32, 64])
+    missing_mask = unaccessible_bitmask_subset.astype(int)
+    missing_by_mult = missingness_by_window_scales(
+        missing_mask=missing_mask,
+        base_window=window_size,
+        step_size=window_size,           
+        multipliers=w_multipliers,
+        sequence_length=sequence_length,
+    )
+
+    missing_by_mult = np.expand_dims(missing_by_mult, axis=0)
+    missing_by_mult = np.tile(missing_by_mult, (len(pairs), 1, 1))
+    X[:, 0, :, :, 0] = np.exp(missing_by_mult)
+    X[:, 1, :, :, 0] = np.exp(1 - missing_by_mult)
+    return X.astype(dtype)
+
+
+
 # ---- worker ----
-def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool, int]) -> str:
+def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool, int, str]) -> str:
     (
         idx, f_str, base_str, out_root_str, split, window_size, sequence_length,
-        num_pairs, global_seed, skip_existing, simplify_first_n_samples
+        num_pairs, global_seed, skip_existing, simplify_first_n_samples, bitmask
     ) = args_tuple
 
     f = pathlib.Path(f_str)
@@ -275,9 +348,18 @@ def _worker(args_tuple: Tuple[int, str, str, str, str, int, int, int, bool, int]
     # deterministic per-file seed (your original: depends on index)
     pair_seed = int(np.int64(global_seed) + np.int64(idx) * 10007)
 
+    if bitmask is not None:
+        rng = np.random.default_rng(pair_seed)  
+        start_index = rng.integers(0, bitmask.size - sequence_length)
+        unaccessible_bitmask_subset = bitmask[start_index:start_index + sequence_length]
+
     try:
         pairs = choose_pairs(ts, num_pairs, seed=pair_seed)
-        X = process_X(ts, pairs, window_size=window_size, sequence_length=sequence_length, dtype=np.float16)
+        if bitmask is not None:
+            X = process_X_with_bitmask(ts, pairs, window_size=window_size, sequence_length=sequence_length,
+                                      dtype=np.float16, unaccessible_bitmask_subset=unaccessible_bitmask_subset)
+        else:
+            X = process_X(ts, pairs, window_size=window_size, sequence_length=sequence_length, dtype=np.float16)
         y = process_y(ts, pairs, window_size=window_size, sequence_length=sequence_length, transform=np.log, dtype=np.float16)
 
         np.save(out_dir / "X.npy", X)
@@ -318,6 +400,7 @@ def main():
     ap.add_argument("--global_seed", type=int, default=12345)
     ap.add_argument("--skip_existing", action="store_true")
     ap.add_argument("--num_workers", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--bitmask", type=str, default=None)
     args = ap.parse_args()
 
     base = pathlib.Path(args.base_dir)
@@ -332,6 +415,9 @@ def main():
     #train_membership = deterministic_split(files, args.train_ratio, seed=args.global_seed)
     train_membership = deterministic_split_grouped(files, base, args.train_ratio, seed=args.global_seed)
 
+    if args.bitmask is not None:
+        bitmask = np.load(args.bitmask)['access_2L']
+        unaccessible_bitmask = ~bitmask
 
     # Build job list (freeze split/index to keep determinism with multiprocessing)
     jobs = []
@@ -348,7 +434,8 @@ def main():
             int(args.num_pairs),
             int(args.global_seed),
             bool(args.skip_existing),
-            int(args.simplify_first_n_samples)
+            int(args.simplify_first_n_samples),
+            unaccessible_bitmask
         ))
 
     # Run in parallel

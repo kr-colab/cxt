@@ -8,6 +8,7 @@ from einops import rearrange
 class MutationsToLatentSpace(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config = config
         self.proj01   = nn.Linear(
             config.num_samples,
             config.sample_scale_embd * config.num_samples,
@@ -19,9 +20,10 @@ class MutationsToLatentSpace(nn.Module):
             bias=True)
         self.dropout = nn.Dropout(config.dropout)
         self.register_buffer('weights', torch.tensor([0.7, 0.3]).view(1, 2, 1, 1, 1))
-    def forward(self, x):
+    def forward(self, x, mask_singletons=False):
         B, XX, WS, NW, IE = x.size()
-        x[..., 0] = 0. # masks singeltons                          
+        if self.config.mask_singletons:
+            x[..., 0] = 0. # masks singletons
         x = self.proj01(x)
         x = self.gelu(x)
         x = self.proj02(x)

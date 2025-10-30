@@ -69,6 +69,7 @@ def calculate_window_sfs_vectorized(
     return sfs_array
 
 
+
 def calculate_window_sfs_vectorized(
     positions,
     pivot_frequencies,
@@ -140,6 +141,7 @@ def calculate_window_sfs_vectorized(
             else:
                 sfs_array[i, :] = 0.0
 
+    
     if use_interpolation:
         # --- Adjacent-window interpolation (linear, per SFS bin) ---
         if np.isnan(sfs_array).any():
@@ -155,6 +157,27 @@ def calculate_window_sfs_vectorized(
                         # all missing in this column -> fall back to zeros
                         y[:] = 0.0
                 sfs_array[:, k] = y
+    
+    """
+    if use_interpolation:
+    # --- Adjacent-window interpolation (log-linear, per SFS bin) ---
+        if np.isnan(sfs_array).any():
+            eps = 1e-8  # prevents log(0)
+            for k in range(num_samples):
+                y = sfs_array[:, k]
+                mask = np.isnan(y)
+                if mask.any():
+                    if (~mask).any():
+                        x_good = np.flatnonzero(~mask)
+                        y_good = np.log(y[~mask] + eps)          # log-transform
+                        y_interp = np.interp(np.flatnonzero(mask), x_good, y_good)
+                        y[mask] = np.exp(y_interp) - eps         # back-transform
+                    else:
+                        # all missing in this column -> fall back to zeros
+                        y[:] = 0.0
+                sfs_array[:, k] = y
+    """
+    
 
     return sfs_array
 
@@ -184,8 +207,8 @@ def _build_one_src_task(task):
     Returns:
       (b_idx, p_idx, X)
     """
-    b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask, use_interpolation = task
-    X = build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask, use_interpolation=use_interpolation)
+    b_idx, p_idx, block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask, use_interpolation, missingness_bitmask = task
+    X = build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask, use_interpolation=use_interpolation, missingness_bitmask=missingness_bitmask)
     return b_idx, p_idx, X
 
 
@@ -224,7 +247,7 @@ def _build_sources_serial(tasks, progress=True):
         Xs.append(build_src(block_pos, block_gm, pivot_A, pivot_B, sequence_length, step_size, availability_mask))
     return np.stack(Xs, axis=0)
 
-def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length=1e6, step_size=2000, availability_mask=None, use_interpolation=False):
+def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length=1e6, step_size=2000, availability_mask=None, use_interpolation=False, missingness_bitmask=None):
 
     num_samples, num_sites = block_gm.shape
 
@@ -264,6 +287,22 @@ def build_src(block_positions, block_gm, pivot_id_A, pivot_id_B, sequence_length
         Xs_xnor[i] = sfs_for(pos_xnor, freqs_xnor, w)
 
     X = np.stack([Xs_xor, Xs_xnor], axis=0).astype(np.float16)
+
+    if missingness_bitmask is not None:
+        from cxt.preprocess import missingness_by_window_scales
+        missing_mask = missingness_bitmask.astype(int)
+        missing_by_mult = missingness_by_window_scales(
+            missing_mask=missing_mask,
+            base_window=step_size,
+            step_size=step_size,           
+            multipliers=w_multipliers,
+            sequence_length=sequence_length,
+        )
+        #missing_by_mult = np.expand_dims(missing_by_mult, axis=0)
+        #missing_by_mult = np.tile(missing_by_mult, (1, 1, 1))
+        X[0, :, :, 0] = np.exp(missing_by_mult)
+        X[1, :, :, 0] = np.exp(1 - missing_by_mult)
+
     return np.log1p(X)
 
 
@@ -808,7 +847,7 @@ def ground_truth_tmrca(ts, block, pivot_A, pivot_B, window_size=2000):
     return np.log(np.clip(vals, 1e-12, None)) if len(vals) else np.full(((end - start) // window_size,), np.log(1e4))
 
 
-def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size, availability_mask, use_interpolation):
+def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size, availability_mask, use_interpolation, missingness_bitmask):
     tasks = []
     index_map = []
     #for b_idx, (block_start, block_end) in enumerate(blocks):
@@ -826,6 +865,11 @@ def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_le
         else:
             block_availability_mask = None
 
+        if missingness_bitmask is not None:
+            block_mask_missingness = missingness_bitmask[int(block_start):int(block_end)]
+        else: 
+            block_mask_missingness = None
+
         # block-relative coordinates
         block_pos_rel = block_pos_abs - block_start
 
@@ -833,7 +877,7 @@ def _prepare_build_tasks(gm_samples, positions, blocks, pivot_pairs, sequence_le
         block_gm, block_pos_rel = basic_filtering(block_gm, block_pos_rel)
 
         for p_idx, (pivot_A, pivot_B) in enumerate(pivot_pairs):
-            tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B, sequence_length, step_size, block_availability_mask, use_interpolation))
+            tasks.append((b_idx, p_idx, block_pos_rel, block_gm, pivot_A, pivot_B, sequence_length, step_size, block_availability_mask, use_interpolation, block_mask_missingness))
             index_map.append((b_idx, p_idx))
     return tasks, np.array(index_map, dtype=np.int32)
 
@@ -1062,7 +1106,7 @@ def apply_tmrca_bias_correction(tmrca, ts, index_map, blocks, pivot_pairs, mutat
 
 
 from cxt.utils import stochastic_diversity_bias_correction_v2
-def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivot_pairs, mutation_rate, availability_mask=None):
+def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivot_pairs, mutation_rate, availability_mask=None, missingness_bitmask=None):
 
     corrected_tmrca_all = np.zeros_like(tmrca)
     for b_idx, (block_start, block_end) in enumerate(blocks):
@@ -1077,6 +1121,13 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
         else:
             block_availability_mask = None
 
+        if missingness_bitmask is not None:
+            block_mask_missingness = missingness_bitmask[int(block_start):int(block_end)]
+            n = len(block_mask_missingness) // step_size
+            block_mask_missingness = block_mask_missingness[:n * step_size].reshape(n, step_size).mean(axis=1)
+        else: 
+            block_mask_missingness = None
+
         
         block_gm = gm[:, block_mask]
         block_pos_rel = block_pos_abs - block_start
@@ -1090,6 +1141,7 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
             predictions=predictions, # log and in form (n_replicates, pairs, n_windows)
             pivot_pairs=np.array(pivot_pairs),
             availability_mask=block_availability_mask,
+            mask_missingness=block_mask_missingness,
             positions=block_pos_rel,
             window_size=step_size,
             rng=np.random.default_rng(1234),
@@ -1119,6 +1171,7 @@ def translate_from_genotype_matrix(
         residual_model: bool = False,
         availability_mask: np.ndarray | None = None,
         use_interpolation: bool = False,
+        missingness_bitmask: np.ndarray | None = None,
     ):
     """
     Returns yhat of shape (n_items, n_reps, ...).
@@ -1135,7 +1188,7 @@ def translate_from_genotype_matrix(
 
     # Build sources (mp or serial)
     tasks, index_map = _prepare_build_tasks(
-        gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size, availability_mask, use_interpolation
+        gm_samples, positions, blocks, pivot_pairs, sequence_length, step_size, availability_mask, use_interpolation, missingness_bitmask
     )
     if build_workers and build_workers > 1:
         X_base = _build_sources_parallel(tasks, progress=progress, max_workers=build_workers)
@@ -1288,6 +1341,7 @@ def translate_from_vcf(
     residual_model: bool = False,
     availability_mask: np.ndarray | None = None,
     use_interpolation: bool = False,
+    missingness_bitmask: np.ndarray | None = None
 ):
     positions, gm = vcf_parser(vcf_path)
     return translate_from_genotype_matrix(
@@ -1298,7 +1352,7 @@ def translate_from_vcf(
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
         use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate,
-        residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation
+        residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation, missingness_bitmask=missingness_bitmask
     )
 
 
@@ -1325,6 +1379,7 @@ def translate_from_ts(
     residual_model: bool = False,
     availability_mask: np.ndarray | None = None,
     use_interpolation: bool = False,
+    missingness_bitmask: np.ndarray | None = None
 ):
     positions = ts.tables.sites.position
     gm = ts.genotype_matrix().T
@@ -1336,7 +1391,7 @@ def translate_from_ts(
         devices=devices, B_per_device=B_per_device,
         progress=progress, decode_bar=decode_bar, build_workers=build_workers,
         use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate,
-        residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation 
+        residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation , missingness_bitmask=missingness_bitmask
     )
 
 
@@ -1364,6 +1419,7 @@ def translate(
     residual_model: bool = False,
     availability_mask: np.ndarray | None = None,
     use_interpolation: bool = False,
+    missingness_bitmask: np.ndarray | None = None,
 ):
     if data_type == "vcf":
         return translate_from_vcf(
@@ -1372,7 +1428,7 @@ def translate(
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
             use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate,
-            residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation
+            residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation, missingness_bitmask=missingness_bitmask
         )
     elif data_type == "ts":
         return translate_from_ts(
@@ -1381,7 +1437,7 @@ def translate(
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
             use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate,
-            residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation
+            residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation, missingness_bitmask=missingness_bitmask
         )
     elif data_type == "gm":
         gm, positions = input_data
@@ -1393,7 +1449,7 @@ def translate(
             devices=devices, B_per_device=B_per_device,
             progress=progress, decode_bar=decode_bar, build_workers=build_workers,
             use_fast_process_per_gpu=use_fast_process_per_gpu, adapter=adapter, mutation_rate=mutation_rate,
-            residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation
+            residual_model=residual_model, availability_mask=availability_mask, use_interpolation=use_interpolation, missingness_bitmask=missingness_bitmask
         )
     else:
         raise ValueError("data_type must be one of 'vcf', 'ts', or 'gm'")
