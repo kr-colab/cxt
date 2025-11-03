@@ -263,7 +263,7 @@ def _percent_missing_per_window(missing_mask, window_size, step_size, sequence_l
     with np.errstate(divide='ignore', invalid='ignore'):
         frac = sums / np.maximum(lens, 1)
     return frac
-
+"""
 def missingness_by_window_scales(
     missing_mask: np.ndarray,
     base_window: int,
@@ -271,12 +271,6 @@ def missingness_by_window_scales(
     multipliers: np.ndarray,
     sequence_length: int,
 ) -> np.ndarray:
-    """
-    For each multiplier m, compute average missingness over windows of size
-    w_m = m * base_window, sampled every `step_size`.
-
-    Returns: array of shape (len(multipliers), n_steps)
-    """
     n_steps = int(np.ceil(sequence_length / step_size))
     out = np.zeros((len(multipliers), n_steps), dtype=np.float32)
     for i, m in enumerate(multipliers):
@@ -285,7 +279,8 @@ def missingness_by_window_scales(
             missing_mask, window_size=w_m, step_size=step_size, sequence_length=sequence_length
         ).astype(np.float32)
     return out
-
+"""
+"""
 def bitmask_to_intervals(bitmask):
     changepoints = np.flatnonzero(bitmask[1:] != bitmask[:-1])
     changepoints = np.append(np.append(0, changepoints + 1), bitmask.size)
@@ -293,6 +288,65 @@ def bitmask_to_intervals(bitmask):
     for s, e in zip(changepoints[:-1], changepoints[1:]):
         if bitmask[s]: bedmask.append([s, e]) 
     return np.stack(bedmask)
+"""
+    
+# -fast vesions
+def missingness_by_window_scales(
+    missing_mask: np.ndarray,
+    base_window: int,
+    step_size: int,
+    multipliers: np.ndarray,
+    sequence_length: int,
+) -> np.ndarray:
+    """
+    Vectorized over all multipliers: one cumsum, all window sums via fancy indexing.
+    Returns shape (len(multipliers), n_steps).
+    """
+    # Ensure compact dtypes for faster cumsum/indexing
+    mm = np.ascontiguousarray(missing_mask, dtype=np.uint8)
+    N = int(sequence_length)
+
+    n_steps = int(np.ceil(N / step_size))
+    starts = (np.arange(n_steps, dtype=np.int64) * step_size)
+
+    # Single cumulative sum for all queries
+    c = np.empty(N + 1, dtype=np.int64)
+    c[0] = 0
+    c[1:] = np.cumsum(mm, dtype=np.int64)
+
+    # All window sizes at once
+    w = (np.asarray(multipliers, dtype=np.int64) * int(base_window))
+    ends = np.minimum(starts[None, :] + w[:, None], N)
+
+    # Broadcasted range sums and lengths -> fractions
+    sums = c[ends] - c[starts][None, :]
+    lens = (ends - starts[None, :]).astype(np.float32)
+    out = (sums / np.maximum(lens, 1)).astype(np.float32)
+    return out
+
+def bitmask_to_intervals(bitmask: np.ndarray) -> np.ndarray:
+    """
+    Vectorized run-length extraction of True segments [start, end) from a boolean bitmask.
+    Returns shape (K, 2). If no True runs, returns (0,2) array.
+    """
+    b = np.asarray(bitmask, dtype=bool)
+    if b.size == 0:
+        return np.empty((0, 2), dtype=np.int64)
+
+    # Indices where value changes, add boundaries
+    changes = np.flatnonzero(b[1:] != b[:-1]) + 1
+    bounds = np.r_[0, changes, b.size]
+
+    # Select only runs that start with True
+    start_flags = b[bounds[:-1]]
+    if not np.any(start_flags):
+        return np.empty((0, 2), dtype=np.int64)
+
+    starts = bounds[:-1][start_flags]
+    ends   = bounds[1:][start_flags]
+    return np.column_stack((starts, ends)).astype(np.int64)
+
+
 
 def process_X_with_bitmask(ts, pairs, window_size, sequence_length, dtype, unaccessible_bitmask_subset):
     ts_masked = ts.delete_intervals(bitmask_to_intervals(unaccessible_bitmask_subset))

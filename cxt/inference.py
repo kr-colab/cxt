@@ -103,10 +103,12 @@ def load_model(config, model_path, device="cuda"):
     train_mod = importlib.import_module("cxt.train")     # lazy
     LitTokenFreeDecoder = getattr(train_mod, "LitTokenFreeDecoder")
 
+    #mask_singletons = config.mask_singletons 
     lit = LitTokenFreeDecoder(config)
     ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
     lit.load_state_dict(ckpt["state_dict"], strict=False)
     model = lit.model
+
     del lit, ckpt
 
     model.to(device)

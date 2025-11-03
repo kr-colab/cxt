@@ -307,44 +307,11 @@ if __name__ == "__main__":
         n_head: int = 4
         device: str = "cuda"
         batch_size: int = config['training']['batch_size']
+        mask_singletons: bool = False
     
-
-    
-
-    # Check if dataset_path contains multiple subdirectories
-    """
-    subdirs = [d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))]
-    if len(subdirs) > 1:
-        print("Using multi directory dataset!")
-        train_dataset = MultiDirLazyDataset(root_dir=dataset_path, split='train', test_ratio=0.1)
-        test_dataset = MultiDirLazyDataset(root_dir=dataset_path, split='test', test_ratio=0.1)
-        print(f"Training samples: {len(train_dataset)}")
-        print(f"Testing samples: {len(test_dataset)}")
-    else:
-        print("Using single directory dataset!")
-        train_dataset = LazyDataset(dataset_path, split='train', test_batches=test_batches)
-        test_dataset = LazyDataset(dataset_path, split='test', test_batches=test_batches)
-        print(f"training dataset {len(train_dataset)} samples")
-        print(f"test dataset {len(test_dataset)} samples")
-    """
-
-    
-    from cxt.dataset2 import PairDataset, ShuffleBufferDataset
-    from torch.utils.data import DistributedSampler
-
-
+    from cxt.dataset2 import PairDataset
     train_dataset = PairDataset(root=dataset_path, split="train", mmap=True)
-    #sampler = DistributedSampler(train_dataset, shuffle=True, drop_last=True)
-
-    #train_dataset.shuffle_files(seed=1234)  # O(#files), no disk I/O
-    #train_dataset = ShuffleBufferDataset(train_dataset, buffer_size=4096*8, seed=1234)
-
-    #loader = DataLoader(ds, batch_size=196, shuffle=False, num_workers=32, drop_last=True, prefetch_factor=4)
     test_dataset = PairDataset(root=dataset_path, split="test", mmap=True)
-    #test_dataset = ShuffleBufferDataset(test_dataset, buffer_size=4096*8, seed=5678)
-
-
-    
 
     train_loader = DataLoader(
         train_dataset,
@@ -368,16 +335,20 @@ if __name__ == "__main__":
     )
     gpt_config = TokenFreeDecoderConfig()
     
-
-    lit_model = LitTokenFreeDecoder(
-        gpt_config=gpt_config,
-        pretrained_ckpt='/home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch=1-step=5280.ckpt',    
-        ie_new=10,          
-        adapter_bottleneck=32,
-        adapter_dropout=0.0,
-        new_mask_index=0,
-        training_config=config['training'],
-    )
+    if checkpoint_path:
+        print(f'Loading model from checkpoint: {checkpoint_path}')
+        lit_model = LitTokenFreeDecoder.load_from_checkpoint(checkpoint_path, config=gpt_config)
+        lit_model.model.backbone.transformer.bt2ls.config.mask_singletons = False
+    else:
+        lit_model = LitTokenFreeDecoder(
+            gpt_config=gpt_config,
+            pretrained_ckpt='/home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch=1-step=5280.ckpt',    
+            ie_new=10,          
+            adapter_bottleneck=32,
+            adapter_dropout=0.0,
+            new_mask_index=0,
+            training_config=config['training'],
+        )
     
 
     torch.set_float32_matmul_precision('medium')

@@ -55,7 +55,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 def calculate_window_sfs_vectorized(
         positions, pivot_frequencies,
-        window_size=2000, sequence_length=1e6, num_samples=50, step_size=2000, availability_mask=None,):
+        window_size=2000, sequence_length=1e6, num_samples=50, step_size=2000, availability_mask=None, use_interpolation=None):
     n_windows = int(np.ceil(sequence_length / step_size))
     window_starts = np.arange(n_windows) * step_size
     window_ends = np.minimum(window_starts + window_size, sequence_length)
@@ -69,7 +69,7 @@ def calculate_window_sfs_vectorized(
     return sfs_array
 
 
-
+"""
 def calculate_window_sfs_vectorized(
     positions,
     pivot_frequencies,
@@ -158,29 +158,10 @@ def calculate_window_sfs_vectorized(
                         y[:] = 0.0
                 sfs_array[:, k] = y
     
-    """
-    if use_interpolation:
-    # --- Adjacent-window interpolation (log-linear, per SFS bin) ---
-        if np.isnan(sfs_array).any():
-            eps = 1e-8  # prevents log(0)
-            for k in range(num_samples):
-                y = sfs_array[:, k]
-                mask = np.isnan(y)
-                if mask.any():
-                    if (~mask).any():
-                        x_good = np.flatnonzero(~mask)
-                        y_good = np.log(y[~mask] + eps)          # log-transform
-                        y_interp = np.interp(np.flatnonzero(mask), x_good, y_good)
-                        y[mask] = np.exp(y_interp) - eps         # back-transform
-                    else:
-                        # all missing in this column -> fall back to zeros
-                        y[:] = 0.0
-                sfs_array[:, k] = y
-    """
     
 
     return sfs_array
-
+"""
 
 #def check_blocks(blocks):
 #    for b in blocks:
@@ -1142,7 +1123,7 @@ def apply_tmrca_bias_correction_v2(tmrca, gm, positions, index_map, blocks, pivo
             pivot_pairs=np.array(pivot_pairs),
             availability_mask=block_availability_mask,
             mask_missingness=block_mask_missingness,
-            positions=block_pos_rel,
+            #positions=block_pos_rel,
             window_size=step_size,
             rng=np.random.default_rng(1234),
         )
@@ -1237,7 +1218,9 @@ def translate_from_genotype_matrix(
                 blocks=blocks,
                 pivot_pairs=pivot_pairs,
                 mutation_rate=mutation_rate,
-                availability_mask=availability_mask)
+                availability_mask=availability_mask, 
+                missingness_bitmask=missingness_bitmask,
+                )
         return Y, index_map
 
     # --- multi-rep paths ---
@@ -1272,7 +1255,9 @@ def translate_from_genotype_matrix(
                 blocks=blocks,
                 pivot_pairs=pivot_pairs,
                 availability_mask=availability_mask,
-                mutation_rate=mutation_rate)
+                mutation_rate=mutation_rate,
+                missingness_bitmask=missingness_bitmask
+                )
         return Y, index_map
 
     # Default safe path (threaded multi-GPU or single GPU)
@@ -1315,7 +1300,9 @@ def translate_from_genotype_matrix(
             blocks=blocks,
             pivot_pairs=pivot_pairs,
             availability_mask=availability_mask,
-            mutation_rate=mutation_rate)
+            mutation_rate=mutation_rate,
+            missingness_bitmask=missingness_bitmask
+            )
     return Y, index_map
 
 def translate_from_vcf(

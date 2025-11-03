@@ -519,95 +519,66 @@ def stochastic_diversity_bias_correction_v2(
 
 
 
-
-
-
-
-def stochastic_diversity_bias_correction(
-    tree_sequence: tskit.TreeSequence,
+def stochastic_diversity_bias_correction_v2(
+    genotype_matrix: np.ndarray,
     mutation_rate: float,
-    predictions: np.ndarray,        # (R, K, W=500), log TMRCA
-    pivot_pairs: np.ndarray,        # (K, 2)
-    availability_mask: np.ndarray = None,  # (W=500,), fraction available per window
-    window_size: int = 2000,
+    predictions: np.ndarray,
+    pivot_pairs: np.ndarray,
     return_intercept: bool = False,
     rng: np.random.Generator = None,
-    positions = None
-):
-    """
-    Availability-aware correction with 1:1 alignment: window == step, W == 500.
-    Scales by available bp per window: available_bp[i] = window_span[i] * availability_mask[i].
-    If no mask is given, assumes full availability (1.0 for all windows).
+    sequence_length = 1e6,
+    window_size: int = 200,
+    availability_mask = None,
+    mask_missingness: bool = False,
+) -> (np.ndarray, np.ndarray):
+    r"""
+    Correct the predicted TMRCAs such that expected diversity matches
+    observed diversity, for a given mutation rate. This is done stochastically,
+    by using the fact that under the model,
+
+        mutation_count ~ Poisson(2 * correction * mu * \sum_i TMRCA_i * window_size_i)
+    
+    the posterior (given improper constant prior) is,
+
+        correction ~ Gamma(mutation_count + 1, 2 * mu * \sum_i TMRCA_i * window_size_i)
+
+    and sampling accordingly (e.g. iid for each TMRCA sample, pivot pair).
+    
+    The input predictions are assumed to have dimensions 
+    `(replicates, pairs, windows)`.
     """
     assert predictions.ndim == 3
-    R, K, W = predictions.shape
-    assert pivot_pairs.shape == (K, 2)
-    if rng is None:
-        rng = np.random.default_rng()
-
-    ts = tree_sequence.trim()
-    seq_len = int(window_size*500)
-
-    # Default mask (full availability)
-    if availability_mask is None:
-        availability_mask = np.ones(W, dtype=float)
-    else:
-        availability_mask = np.asarray(availability_mask, dtype=float)
-        assert availability_mask.shape == (W,), "availability_mask must be length W"
-
-    # Window edges
-    win_starts = np.arange(W, dtype=np.int64) * window_size
-    win_ends   = np.minimum(win_starts + window_size, seq_len).astype(np.int64)
-    win_spans  = (win_ends - win_starts).astype(float)
-
-    edges = np.r_[win_starts, win_ends[-1]].astype(float)
-
-    # Available bp per window (1:1 with predictions)
-    available_bp = win_spans * availability_mask  # (W,)
+    assert pivot_pairs.ndim == 2
+    assert pivot_pairs.shape[0] == predictions.shape[1]
+    assert pivot_pairs.shape[1] == 2
+    if rng is None: rng = np.random.default_rng()
+    mutation_count = get_mutation_count(genotype_matrix, pivot_pairs)
+    corrected = []
+    intercept = []
+    if mask_missingness is not None:
+        availability_mask = 1 - mask_missingness
+        available_bp = availability_mask * window_size 
+    else :
+        availability_mask = np.ones(predictions.shape[-1])
+        available_bp = availability_mask * window_size
 
     
-    try:
-    # Observed mutation counts (mask-weighted)
-        obs_per_win = ts.diversity(
-            sample_sets=pivot_pairs,
-            windows=edges,
-            span_normalise=False,
-        )  # (K, W)
-        #print(obs_per_win.shape, availability_mask.shape)
-    except Exception as e:
-        print(e)
-        print(edges[:4])
-        print(edges[-4:])
-        print(ts.sequence_length)
-        raise e
-    mutation_count = (obs_per_win.T * availability_mask[None, :]).sum(axis=1)  # (K,)
-
-    # Expected rate denominator: S = sum_i T * available_bp[i]
-    T = np.exp(predictions)  # (R, K, W)
-    S = (T * available_bp[None, None, :]).sum(axis=-1)  # (R, K)
-
-    corrected = np.empty_like(predictions, dtype=float)
-    intercept = np.empty((R, K, 1), dtype=float)
-
-    for r in range(R):
-        rate = 2.0 * mutation_rate * S[r]
-        safe_rate = np.where(rate > 0, rate, np.inf)
-        shape = mutation_count + 1.0
-        corr = rng.gamma(shape=shape, scale=1.0 / safe_rate)
-        corr = np.where(np.isfinite(corr), corr, 1.0)
-
-        corrected[r] = predictions[r] + np.log(corr)[:, None]
-
-        denom = available_bp.sum()
-        if denom > 0:
-            mean_T_weighted = S[r] / denom
-        else:
-            mean_T_weighted = np.exp(predictions[r]).mean(axis=-1)
-        intercept[r, :, 0] = np.log(mean_T_weighted * corr)
-
+    for i, log_tmrca in enumerate(predictions):
+        rate = 2 * mutation_rate * (np.exp(log_tmrca) @ available_bp)  # (pairs,)
+        correction = rng.gamma(shape=mutation_count + 1, scale=1 / rate)
+        corrected.append(log_tmrca + np.log(correction)[:, np.newaxis])
+        intercept.append(
+            np.log(np.exp(log_tmrca).mean(axis=-1) * correction)[:, np.newaxis]
+        )
+    corrected = np.stack(corrected)
+    intercept = np.stack(intercept)
     return corrected if not return_intercept else (corrected, intercept)
 
 
+
+  
+
+"""
 def get_mutation_count_per_edge(gm, pivot_pairs=[(0, 1), (0, 2)], edges=None, positions=None):
     assert edges is not None and positions is not None, "edges and positions required"
     edges = np.asarray(edges)
@@ -622,70 +593,7 @@ def get_mutation_count_per_edge(gm, pivot_pairs=[(0, 1), (0, 2)], edges=None, po
             in_edge = (positions >= lo) & (positions < hi)
             mutation_counts[i, j] = np.count_nonzero(diffs[in_edge])
     return mutation_counts.T
-
-def stochastic_diversity_bias_correction_v2(
-    genotype_matrix: np.array,
-    positions: np.array,
-    mutation_rate: float,
-    predictions: np.ndarray,        # (R, K, W=500), log TMRCA
-    pivot_pairs: np.ndarray,        # (K, 2)
-    availability_mask: np.ndarray = None,  # (W=500,), fraction available per window
-    window_size: int = 2000,
-    return_intercept: bool = False,
-    rng: np.random.Generator = None,
-):
-    """
-    Availability-aware correction with 1:1 alignment: window == step, W == 500.
-    Scales by available bp per window: available_bp[i] = window_span[i] * availability_mask[i].
-    If no mask is given, assumes full availability (1.0 for all windows).
-    """
-    assert predictions.ndim == 3
-    R, K, W = predictions.shape
-    assert pivot_pairs.shape == (K, 2)
-    if rng is None:
-        rng = np.random.default_rng()
-
-    seq_len = int(window_size*500)
-
-    if availability_mask is None: availability_mask = np.ones(W, dtype=float)
-    else:
-        availability_mask = np.asarray(availability_mask, dtype=float)
-        assert availability_mask.shape == (W,), "availability_mask must be length W"
-
-    win_starts = np.arange(W, dtype=np.int64) * window_size
-    win_ends   = np.minimum(win_starts + window_size, seq_len).astype(np.int64)
-    win_spans  = (win_ends - win_starts).astype(float)
-    edges = np.r_[win_starts, win_ends[-1]].astype(float)
-    available_bp = win_spans * availability_mask  # (W,)
-    try:
-        obs_per_win = get_mutation_count_per_edge(genotype_matrix, pivot_pairs=pivot_pairs, edges=edges, positions=positions)
-    except Exception as e:
-        print(e)
-        print(edges[:4])
-        print(edges[-4:])
-        raise e
-    mutation_count = (obs_per_win.T * availability_mask[None, :]).sum(axis=1)  # (K,)
-    T = np.exp(predictions)  # (R, K, W)
-    S = (T * available_bp[None, None, :]).sum(axis=-1)  # (R, K)
-    corrected = np.empty_like(predictions, dtype=float)
-    intercept = np.empty((R, K, 1), dtype=float)
-    for r in range(R):
-        rate = 2.0 * mutation_rate * S[r]
-        safe_rate = np.where(rate > 0, rate, np.inf)
-        shape = mutation_count + 1.0
-        corr = rng.gamma(shape=shape, scale=1.0 / safe_rate)
-        corr = np.where(np.isfinite(corr), corr, 1.0)
-        corrected[r] = predictions[r] + np.log(corr)[:, None]
-        denom = available_bp.sum()
-        if denom > 0:
-            mean_T_weighted = S[r] / denom
-        else:
-            mean_T_weighted = np.exp(predictions[r]).mean(axis=-1)
-        intercept[r, :, 0] = np.log(mean_T_weighted * corr)
-    return corrected if not return_intercept else (corrected, intercept)
- 
-
-
+"""
 
 
 
@@ -843,8 +751,56 @@ def setup_cxt_model(model_type: str = "broad"):
 
         model = load_model(config=config, model_path=model_path, device=device)
         return model
+    
+    elif model_type == "w200_wmissing":
+        import sys, importlib
+
+        # Lazy import to avoid top-level cycles
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+
+        # replicate your original setup
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        #TokenFreeDecoderConfig.mask_singletons = False
+
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        config.window_size = 200
+        model_path = "/sietch_colab/data_share/cxt/models/w200_wmissing/version_48/checkpoints/epoch=1-step=944.ckpt"
+        #model_path = "/home/kkor/cxt/cxt/lightning_logs/version_51/checkpoints/epoch=3-step=1888.ckpt"
 
 
+        model = load_model(config=config, model_path=model_path, device=device)
+        model.transformer.bt2ls.config.mask_singletons = False
+        return model
+    
+    elif model_type == "w200_wmissing_adapter":
+        import sys, importlib
+        from cxt.train2_n10 import LitTokenFreeDecoder
+        IE_NEW = 10
+        #ckpt_path = "/sietch_colab/data_share/cxt/models/w200_wmissing_adapter/version_50/checkpoints/epoch=2-step=1584.ckpt"
+        ckpt_path = "/home/kkor/cxt/cxt/lightning_logs/version_50/checkpoints/epoch=9-step=480.ckpt"
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        gpt_config = TokenFreeDecoderConfig(device="cpu")
+        gpt_config.window_size = 200
+        model = LitTokenFreeDecoder.load_from_checkpoint(
+            ckpt_path,
+            gpt_config=gpt_config,
+            ie_new=IE_NEW,               
+            adapter_bottleneck=32,
+            adapter_dropout=0.0,
+            new_mask_index=0,
+            training_config=1,
+        )
+        lit_model = model
+        #lit_model.model.backbone.transformer.bt2ls.config.mask_singletons = False
+        return lit_model.model
+
+#        lit_model.model.backbone.transformer.bt2ls.config.mask_singletons = False
 
 
 def discretize(sequence, population_time):
