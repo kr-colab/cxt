@@ -6,8 +6,8 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quick start &mdash; cxt 0.1 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+  <title>Quick start (narrow model) &mdash; cxt 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
 
   
@@ -16,6 +16,7 @@
       <script src="_static/documentation_options.js?v=2709fde1"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -46,8 +47,17 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Quick start</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Quick start (narrow model)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#simulation">Simulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#setting-up-the-model-and-pivot-pairs">Setting up the model and pivot pairs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#inference-with-cxt-api2-translate">Inference with <code class="xref py py-func docutils literal notranslate"><span class="pre">cxt.api2.translate()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#computing-true-tmrcas">Computing true TMRCAs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#discretizing-to-the-training-time-grid">Discretizing to the training time grid</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#scatter-plot-as-in-the-paper">Scatter plot (as in the paper)</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="simulation.html">Simulation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
 </ul>
 
@@ -65,7 +75,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Quick start</li>
+      <li class="breadcrumb-item active">Quick start (narrow model)</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/quick_start.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -75,35 +85,152 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="quick-start">
-<h1>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h1>
-<p>From simulation to inference in a few lines of code.</p>
-<p>First, we simulate a tree sequence with stdpopsim and msprime. Here we simulate 25 diploid individuals from the Zigzag_1S14 demographic model of humans, for the first 2Mb of chromosome 1.
-We hardcoded the requirement of 50 samples, thus we specify 25 generic diploid individuals, which is a minimum requirement for the inference to work. Larger sample sizes need to be downsampled accordingly.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">stdpopsim</span>
-<span class="n">species</span> <span class="o">=</span> <span class="n">stdpopsim</span><span class="o">.</span><span class="n">get_species</span><span class="p">(</span><span class="s2">&quot;HomSap&quot;</span><span class="p">)</span>
-<span class="n">demogr</span> <span class="o">=</span> <span class="n">species</span><span class="o">.</span><span class="n">get_demographic_model</span><span class="p">(</span><span class="s2">&quot;Zigzag_1S14&quot;</span><span class="p">)</span>
-<span class="n">sample</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;generic&quot;</span> <span class="p">:</span> <span class="mi">25</span><span class="p">}</span>
-<span class="n">engine</span> <span class="o">=</span> <span class="n">stdpopsim</span><span class="o">.</span><span class="n">get_engine</span><span class="p">(</span><span class="s2">&quot;msprime&quot;</span><span class="p">)</span>
-<span class="n">contig</span> <span class="o">=</span> <span class="n">species</span><span class="o">.</span><span class="n">get_contig</span><span class="p">(</span><span class="s2">&quot;chr1&quot;</span><span class="p">,</span> <span class="n">right</span><span class="o">=</span><span class="mf">2e6</span><span class="p">)</span>
-<span class="n">ts</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">contig</span><span class="o">=</span><span class="n">contig</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="n">sample</span><span class="p">,</span> <span class="n">demographic_model</span><span class="o">=</span><span class="n">demogr</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span><span class="o">.</span><span class="n">trim</span><span class="p">()</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;example.vcf&#39;</span><span class="p">,</span> <span class="s1">&#39;a&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">ts</span><span class="o">.</span><span class="n">as_vcf</span><span class="p">())</span>
+  <section id="quick-start-narrow-model">
+<h1>Quick start (narrow model)<a class="headerlink" href="#quick-start-narrow-model" title="Link to this heading"></a></h1>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Hardware requirement</strong>: At least one GPU with 40 GB of memory, e.g., NVIDIA A100.</p>
+</div>
+<p>This example demonstrates the full workflow used to generate the
+<span class="math notranslate nohighlight">\(\mathbf{cxt}\)</span>-narrow constant-<span class="math notranslate nohighlight">\(N_e\)</span> benchmark figure from the paper.
+It covers simulation, inference, and comparison between inferred and true pairwise
+coalescent times.</p>
+<section id="simulation">
+<h2>Simulation<a class="headerlink" href="#simulation" title="Link to this heading"></a></h2>
+<p>We begin by simulating a 1 Mb tree sequence under a constant-<span class="math notranslate nohighlight">\(N_e\)</span> model:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">cxt.utils</span> <span class="kn">import</span> <span class="n">simulate_parameterized_tree_sequence</span>
+
+<span class="c1"># Directory for intermediate results</span>
+<span class="n">cache_dir</span> <span class="o">=</span> <span class="s2">&quot;cache&quot;</span>
+<span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">cache_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># Simulate a single tree sequence (1 Mb)</span>
+<span class="n">ts</span> <span class="o">=</span> <span class="n">simulate_parameterized_tree_sequence</span><span class="p">(</span><span class="n">seed</span><span class="o">=</span><span class="mi">103370001</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Then, we can infer pairwise coalescence times using the <cite>translate</cite> function. Here we infer the pairwise coalescence times of sample 0 and 1, using 15 replicates. Since 50 samples are the requirement, the pivot_combinations argument takes a list of tuples, where each tuple specifies the indices of the two samples to infer the pairwise coalescence times for.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">cxt.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">translate</span>
-<span class="n">tmrca</span> <span class="o">=</span> <span class="n">translate</span><span class="p">(</span><span class="s2">&quot;example.vcf&quot;</span><span class="p">,</span> <span class="n">num_replicates</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">pivot_combinations</span><span class="o">=</span><span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)])</span>
+</section>
+<section id="setting-up-the-model-and-pivot-pairs">
+<h2>Setting up the model and pivot pairs<a class="headerlink" href="#setting-up-the-model-and-pivot-pairs" title="Link to this heading"></a></h2>
+<p>Next, we load the <span class="math notranslate nohighlight">\(\mathbf{cxt}\)</span>-narrow model and construct all pairwise
+sample combinations (“pivot pairs”) among 50 samples.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">cxt.utils</span> <span class="kn">import</span> <span class="n">setup_cxt_model</span>
+
+<span class="c1"># Load narrow model</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">setup_cxt_model</span><span class="p">(</span><span class="n">model_type</span><span class="o">=</span><span class="s2">&quot;narrow&quot;</span><span class="p">)</span>
+
+<span class="c1"># Genomic block (1 Mb)</span>
+<span class="n">blocks</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1_000_000</span><span class="p">)]</span>
+
+<span class="c1"># Generate all pairwise sample combinations among 50 samples</span>
+<span class="n">num_samples</span> <span class="o">=</span> <span class="mi">50</span>
+<span class="n">pivot_pairs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_samples</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">num_samples</span><span class="p">)</span>
+<span class="p">]</span>
 </pre></div>
 </div>
-<p>If a mutation rate is provided, we can can apply a correction, which is recommended for real data to deal with scaling offsets.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">cxt.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">translate</span>
-<span class="n">mutation_rate</span> <span class="o">=</span> <span class="mf">1.29e-8</span>
-<span class="n">tmrca</span> <span class="o">=</span> <span class="n">translate</span><span class="p">(</span><span class="s2">&quot;example.vcf&quot;</span><span class="p">,</span> <span class="n">num_replicates</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">mutation_rate</span><span class="o">=</span><span class="n">mutation_rate</span><span class="p">,</span> <span class="n">pivot_combinations</span><span class="o">=</span><span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)])</span>
+</section>
+<section id="inference-with-cxt-api2-translate">
+<h2>Inference with <code class="xref py py-func docutils literal notranslate"><span class="pre">cxt.api2.translate()</span></code><a class="headerlink" href="#inference-with-cxt-api2-translate" title="Link to this heading"></a></h2>
+<p>We directly run inference on the tree sequence using multiple GPUs.
+A small mutation-rate calibration step aligns the inferred TMRCAs with biological scale.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">cxt.api2</span> <span class="kn">import</span> <span class="n">translate</span>
+
+<span class="n">devices</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;cuda:0&quot;</span><span class="p">,</span> <span class="s2">&quot;cuda:1&quot;</span><span class="p">,</span> <span class="s2">&quot;cuda:2&quot;</span><span class="p">]</span>
+<span class="n">B</span> <span class="o">=</span> <span class="mi">256</span>   <span class="c1"># global batch size</span>
+
+<span class="n">yhat_tmrca</span><span class="p">,</span> <span class="n">index_map</span> <span class="o">=</span> <span class="n">translate</span><span class="p">(</span>
+    <span class="n">input_data</span><span class="o">=</span><span class="n">ts</span><span class="p">,</span>
+    <span class="n">data_type</span><span class="o">=</span><span class="s2">&quot;ts&quot;</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+    <span class="n">pivot_pairs</span><span class="o">=</span><span class="n">pivot_pairs</span><span class="p">,</span>
+    <span class="n">blocks</span><span class="o">=</span><span class="n">blocks</span><span class="p">,</span>
+    <span class="n">devices</span><span class="o">=</span><span class="n">devices</span><span class="p">,</span>
+    <span class="n">B_per_device</span><span class="o">=</span><span class="n">B</span><span class="p">,</span>
+    <span class="n">B</span><span class="o">=</span><span class="n">B</span><span class="p">,</span>
+    <span class="n">build_workers</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+    <span class="n">mutation_rate</span><span class="o">=</span><span class="mf">1.29e-8</span><span class="p">,</span>   <span class="c1"># optional calibration</span>
+<span class="p">)</span>
 </pre></div>
 </div>
-<p>The output is of shape (1MB segments, num_replicates, num_pivot_combinations, windows), e.g. (2, 15, 1, 500) for the example above, where 500 is the number of 2kb windows in 1MB. Usually the mean over the 15 replicates is taken for downstream analysis.</p>
-<img alt="Inference of pairwise coalescence times of sample 0 and 1." class="align-center" src="_images/tmrca_example.png" />
+<p>Here <code class="docutils literal notranslate"><span class="pre">yhat_tmrca</span></code> contains log-TMRCA predictions for each pivot pair and window.</p>
+</section>
+<section id="computing-true-tmrcas">
+<h2>Computing true TMRCAs<a class="headerlink" href="#computing-true-tmrcas" title="Link to this heading"></a></h2>
+<p>For benchmarking, we compute “true” pairwise TMRCAs directly from the simulated tree
+sequence. The helper <code class="xref py py-func docutils literal notranslate"><span class="pre">cxt.preprocess.interpolate_tmrcas()</span></code> computes the coalescent
+time for a given pair and interpolates it into 2 kb windows.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ProcessPoolExecutor</span>
+<span class="kn">from</span> <span class="nn">cxt.preprocess</span> <span class="kn">import</span> <span class="n">interpolate_tmrcas</span>
+
+<span class="n">WINDOW_BP</span> <span class="o">=</span> <span class="mi">2000</span>
+<span class="n">BLOCK_LEN</span> <span class="o">=</span> <span class="mi">1_000_000</span>
+
+<span class="k">def</span> <span class="nf">_true</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+    <span class="n">ts</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">args</span>
+    <span class="k">return</span> <span class="n">interpolate_tmrcas</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">WINDOW_BP</span><span class="p">,</span> <span class="n">BLOCK_LEN</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">build_yhats_ytrues</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">pivot_ids</span><span class="p">,</span> <span class="n">yhat_tmrca</span><span class="p">,</span> <span class="n">max_workers</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># Convert model output from log space to generations</span>
+    <span class="n">yhat_means</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">yhat_tmrca</span><span class="p">)</span>
+
+    <span class="c1"># Compute true TMRCAs for each pivot pair</span>
+    <span class="k">with</span> <span class="n">ProcessPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">max_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+        <span class="n">ytrues</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">_true</span><span class="p">,</span> <span class="p">[(</span><span class="n">ts</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">pivot_ids</span><span class="p">]))</span>
+
+    <span class="c1"># Mean predicted TMRCAs across replicates</span>
+    <span class="n">yhats</span> <span class="o">=</span> <span class="p">[</span><span class="n">yhat_means</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">pivot_ids</span><span class="p">))]</span>
+
+    <span class="k">return</span> <span class="n">yhats</span><span class="p">,</span> <span class="n">ytrues</span>
+
+<span class="n">yhats</span><span class="p">,</span> <span class="n">ytrues</span> <span class="o">=</span> <span class="n">build_yhats_ytrues</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">pivot_pairs</span><span class="p">,</span> <span class="n">yhat_tmrca</span><span class="p">,</span> <span class="n">max_workers</span><span class="o">=</span><span class="mi">24</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Flatten for easy plotting:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">yhats</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">yhats</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+<span class="n">ytrues</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ytrues</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="discretizing-to-the-training-time-grid">
+<h2>Discretizing to the training time grid<a class="headerlink" href="#discretizing-to-the-training-time-grid" title="Link to this heading"></a></h2>
+<p>To match the exact time grid used during model training (as done for the paper),
+we discretize the true TMRCAs in log space onto the internal <code class="docutils literal notranslate"><span class="pre">TIMES</span></code> grid.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">cxt.utils</span> <span class="kn">import</span> <span class="n">TIMES</span>
+
+<span class="k">def</span> <span class="nf">discretize</span><span class="p">(</span><span class="n">sequence</span><span class="p">,</span> <span class="n">population_time</span><span class="p">):</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">population_time</span><span class="p">,</span> <span class="n">sequence</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;right&quot;</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">population_time</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">idx</span>
+
+<span class="c1"># Discretize true TMRCAs</span>
+<span class="n">ytrues_log</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">ytrues</span><span class="p">)</span>
+<span class="n">ytrues_idx</span> <span class="o">=</span> <span class="n">discretize</span><span class="p">(</span><span class="n">ytrues_log</span><span class="p">,</span> <span class="n">TIMES</span><span class="p">)</span>
+<span class="n">ytrues</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">TIMES</span><span class="p">[</span><span class="n">ytrues_idx</span><span class="p">])</span>
+</pre></div>
+</div>
+</section>
+<section id="scatter-plot-as-in-the-paper">
+<h2>Scatter plot (as in the paper)<a class="headerlink" href="#scatter-plot-as-in-the-paper" title="Link to this heading"></a></h2>
+<p>To reproduce the constant-<span class="math notranslate nohighlight">\(N_e\)</span> benchmark panel from the manuscript,
+we generate a scatter plot comparing inferred and true TMRCAs.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">local_utils</span> <span class="kn">import</span> <span class="n">plot_tmrca_scatter</span>
+
+<span class="n">ax_cxt_constant</span> <span class="o">=</span> <span class="n">plot_tmrca_scatter</span><span class="p">(</span>
+    <span class="n">yhats</span><span class="p">,</span>
+    <span class="n">ytrues</span><span class="p">,</span>
+    <span class="s2">&quot;cxt_constant.png&quot;</span><span class="p">,</span>
+    <span class="n">tool</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;$\mathbf</span><span class="si">{cxt}</span><span class="s2">$-narrow: Constant $N_e$&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The saved file <code class="docutils literal notranslate"><span class="pre">cxt_constant.png</span></code> corresponds directly to the
+<span class="math notranslate nohighlight">\(\mathbf{cxt}\)</span>-narrow constant-<span class="math notranslate nohighlight">\(N_e\)</span> panel shown in the paper.</p>
+</section>
 </section>
 
 

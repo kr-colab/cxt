@@ -1,42 +1,163 @@
-Quick start
+Quick start (narrow model)
 ===========
 
-From simulation to inference in a few lines of code.
+.. note::
 
-First, we simulate a tree sequence with stdpopsim and msprime. Here we simulate 25 diploid individuals from the Zigzag_1S14 demographic model of humans, for the first 2Mb of chromosome 1.
-We hardcoded the requirement of 50 samples, thus we specify 25 generic diploid individuals, which is a minimum requirement for the inference to work. Larger sample sizes need to be downsampled accordingly.
+    **Hardware requirement**: At least one GPU with 40 GB of memory, e.g., NVIDIA A100.
 
-.. code-block:: python
+This example demonstrates the full workflow used to generate the
+:math:`\mathbf{cxt}`-narrow constant-\ :math:`N_e` benchmark figure from the paper.
+It covers simulation, inference, and comparison between inferred and true pairwise
+coalescent times.
 
-    import stdpopsim
-    species = stdpopsim.get_species("HomSap")
-    demogr = species.get_demographic_model("Zigzag_1S14")
-    sample = {"generic" : 25}
-    engine = stdpopsim.get_engine("msprime")
-    contig = species.get_contig("chr1", right=2e6)
-    ts = engine.simulate(contig=contig, samples=sample, demographic_model=demogr, seed=42).trim()
-    with open('example.vcf', 'a') as f:
-        f.write(ts.as_vcf())
+Simulation
+----------
 
-Then, we can infer pairwise coalescence times using the `translate` function. Here we infer the pairwise coalescence times of sample 0 and 1, using 15 replicates. Since 50 samples are the requirement, the pivot_combinations argument takes a list of tuples, where each tuple specifies the indices of the two samples to infer the pairwise coalescence times for.
+We begin by simulating a 1 Mb tree sequence under a constant-\ :math:`N_e` model:
 
 .. code-block:: python
 
-    from cxt.api import translate
-    tmrca = translate("example.vcf", num_replicates=15, pivot_combinations=[(0, 1)])
+    import os
+    import numpy as np
 
+    from cxt.utils import simulate_parameterized_tree_sequence
 
-If a mutation rate is provided, we can can apply a correction, which is recommended for real data to deal with scaling offsets.
+    # Directory for intermediate results
+    cache_dir = "cache"
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Simulate a single tree sequence (1 Mb)
+    ts = simulate_parameterized_tree_sequence(seed=103370001)
+
+Setting up the model and pivot pairs
+------------------------------------
+
+Next, we load the :math:`\mathbf{cxt}`-narrow model and construct all pairwise
+sample combinations (“pivot pairs”) among 50 samples.
 
 .. code-block:: python
 
-    from cxt.api import translate
-    mutation_rate = 1.29e-8
-    tmrca = translate("example.vcf", num_replicates=15, mutation_rate=mutation_rate, pivot_combinations=[(0, 1)])
+    from cxt.utils import setup_cxt_model
 
+    # Load narrow model
+    model = setup_cxt_model(model_type="narrow")
 
-The output is of shape (1MB segments, num_replicates, num_pivot_combinations, windows), e.g. (2, 15, 1, 500) for the example above, where 500 is the number of 2kb windows in 1MB. Usually the mean over the 15 replicates is taken for downstream analysis.
+    # Genomic block (1 Mb)
+    blocks = [(0, 1_000_000)]
 
-.. image:: ./figures/tmrca_example.png
-    :alt: Inference of pairwise coalescence times of sample 0 and 1.
-    :align: center
+    # Generate all pairwise sample combinations among 50 samples
+    num_samples = 50
+    pivot_pairs = [
+        (i, j)
+        for i in range(num_samples)
+        for j in range(i + 1, num_samples)
+    ]
+
+Inference with :func:`cxt.api2.translate`
+-----------------------------------------
+
+We directly run inference on the tree sequence using multiple GPUs.
+A small mutation-rate calibration step aligns the inferred TMRCAs with biological scale.
+
+.. code-block:: python
+
+    from cxt.api2 import translate
+
+    devices = ["cuda:0", "cuda:1", "cuda:2"]
+    B = 256   # global batch size
+
+    yhat_tmrca, index_map = translate(
+        input_data=ts,
+        data_type="ts",
+        model=model,
+        pivot_pairs=pivot_pairs,
+        blocks=blocks,
+        devices=devices,
+        B_per_device=B,
+        B=B,
+        build_workers=8,
+        mutation_rate=1.29e-8,   # optional calibration
+    )
+
+Here ``yhat_tmrca`` contains log-TMRCA predictions for each pivot pair and window.
+
+Computing true TMRCAs
+---------------------
+
+For benchmarking, we compute “true” pairwise TMRCAs directly from the simulated tree
+sequence. The helper :func:`cxt.preprocess.interpolate_tmrcas` computes the coalescent
+time for a given pair and interpolates it into 2 kb windows.
+
+.. code-block:: python
+
+    from concurrent.futures import ProcessPoolExecutor
+    from cxt.preprocess import interpolate_tmrcas
+
+    WINDOW_BP = 2000
+    BLOCK_LEN = 1_000_000
+
+    def _true(args):
+        ts, a, b = args
+        return interpolate_tmrcas(ts, WINDOW_BP, BLOCK_LEN, a, b)
+
+    def build_yhats_ytrues(ts, pivot_ids, yhat_tmrca, max_workers=None):
+        # Convert model output from log space to generations
+        yhat_means = np.exp(yhat_tmrca)
+
+        # Compute true TMRCAs for each pivot pair
+        with ProcessPoolExecutor(max_workers=max_workers) as ex:
+            ytrues = list(ex.map(_true, [(ts, a, b) for a, b in pivot_ids]))
+
+        # Mean predicted TMRCAs across replicates
+        yhats = [yhat_means.mean(0)[i] for i in range(len(pivot_ids))]
+
+        return yhats, ytrues
+
+    yhats, ytrues = build_yhats_ytrues(ts, pivot_pairs, yhat_tmrca, max_workers=24)
+
+Flatten for easy plotting:
+
+.. code-block:: python
+
+    yhats = np.array(yhats).flatten()
+    ytrues = np.array(ytrues).flatten()
+
+Discretizing to the training time grid
+--------------------------------------
+
+To match the exact time grid used during model training (as done for the paper),
+we discretize the true TMRCAs in log space onto the internal ``TIMES`` grid.
+
+.. code-block:: python
+
+    from cxt.utils import TIMES
+
+    def discretize(sequence, population_time):
+        idx = np.searchsorted(population_time, sequence, side="right") - 1
+        idx = np.clip(idx, 0, len(population_time) - 1)
+        return idx
+
+    # Discretize true TMRCAs
+    ytrues_log = np.log(ytrues)
+    ytrues_idx = discretize(ytrues_log, TIMES)
+    ytrues = np.exp(TIMES[ytrues_idx])
+
+Scatter plot (as in the paper)
+------------------------------
+
+To reproduce the constant-\ :math:`N_e` benchmark panel from the manuscript,
+we generate a scatter plot comparing inferred and true TMRCAs.
+
+.. code-block:: python
+
+    from local_utils import plot_tmrca_scatter
+
+    ax_cxt_constant = plot_tmrca_scatter(
+        yhats,
+        ytrues,
+        "cxt_constant.png",
+        tool=r"$\mathbf{cxt}$-narrow: Constant $N_e$",
+    )
+
+The saved file ``cxt_constant.png`` corresponds directly to the
+:math:`\mathbf{cxt}`-narrow constant-\ :math:`N_e` panel shown in the paper.
