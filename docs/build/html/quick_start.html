@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quick start (narrow model) &mdash; cxt 0.1 documentation</title>
+  <title>Quick start (example from paper using narrow model) &mdash; cxt 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
 
@@ -20,7 +20,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Simulation" href="simulation.html" />
+    <link rel="next" title="Window-wise Decoding with cxt" href="examples.html" />
     <link rel="prev" title="Installation" href="installation.html" /> 
 </head>
 
@@ -47,7 +47,7 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Quick start (narrow model)</a><ul>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Quick start (example from paper using narrow model)</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#simulation">Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#setting-up-the-model-and-pivot-pairs">Setting up the model and pivot pairs</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#inference-with-cxt-api2-translate">Inference with <code class="xref py py-func docutils literal notranslate"><span class="pre">cxt.api2.translate()</span></code></a></li>
@@ -56,9 +56,14 @@
 <li class="toctree-l2"><a class="reference internal" href="#scatter-plot-as-in-the-paper">Scatter plot (as in the paper)</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Window-wise Decoding with cxt</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demography.html">Demography-based benchmark and coalescence rates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="human.html">Human 1000 Genomes: LCT and HLA examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mosquito.html">Mosquito 2L inversion and RDL sweep</a></li>
 <li class="toctree-l1"><a class="reference internal" href="simulation.html">Simulation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="training.html#training-cxt-models">Training cxt models</a></li>
 </ul>
 
         </div>
@@ -75,7 +80,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Quick start (narrow model)</li>
+      <li class="breadcrumb-item active">Quick start (example from paper using narrow model)</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/quick_start.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -85,16 +90,13 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="quick-start-narrow-model">
-<h1>Quick start (narrow model)<a class="headerlink" href="#quick-start-narrow-model" title="Link to this heading"></a></h1>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p><strong>Hardware requirement</strong>: At least one GPU with 40 GB of memory, e.g., NVIDIA A100.</p>
-</div>
+  <section id="quick-start-example-from-paper-using-narrow-model">
+<h1>Quick start (example from paper using narrow model)<a class="headerlink" href="#quick-start-example-from-paper-using-narrow-model" title="Link to this heading"></a></h1>
 <p>This example demonstrates the full workflow used to generate the
 <span class="math notranslate nohighlight">\(\mathbf{cxt}\)</span>-narrow constant-<span class="math notranslate nohighlight">\(N_e\)</span> benchmark figure from the paper.
 It covers simulation, inference, and comparison between inferred and true pairwise
-coalescent times.</p>
+coalescent times. In most cases the broad model is recommended for practical use;
+see the examples page for a general decoding tutorial.</p>
 <section id="simulation">
 <h2>Simulation<a class="headerlink" href="#simulation" title="Link to this heading"></a></h2>
 <p>We begin by simulating a 1 Mb tree sequence under a constant-<span class="math notranslate nohighlight">\(N_e\)</span> model:</p>
@@ -238,7 +240,7 @@ we generate a scatter plot comparing inferred and true TMRCAs.</p>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="simulation.html" class="btn btn-neutral float-right" title="Simulation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="examples.html" class="btn btn-neutral float-right" title="Window-wise Decoding with cxt" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

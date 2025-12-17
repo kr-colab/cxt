@@ -1,14 +1,13 @@
-Quick start (narrow model)
-===========
+Quick start (example from paper using narrow model)
+===================================================
 
 .. note::
-
-    **Hardware requirement**: At least one GPU with 40 GB of memory, e.g., NVIDIA A100.
 
 This example demonstrates the full workflow used to generate the
 :math:`\mathbf{cxt}`-narrow constant-\ :math:`N_e` benchmark figure from the paper.
 It covers simulation, inference, and comparison between inferred and true pairwise
-coalescent times.
+coalescent times. In most cases the broad model is recommended for practical use;
+see the examples page for a general decoding tutorial.
 
 Simulation
 ----------
