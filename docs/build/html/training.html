@@ -16,6 +16,7 @@
       <script src="_static/documentation_options.js?v=2709fde1"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -46,9 +47,30 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quick_start.html">Quick start (narrow model)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Window-wise Decoding with cxt</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demography.html">Demography-based benchmark and coalescence rates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="human.html">Human 1000 Genomes: LCT and HLA examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mosquito.html">Mosquito 2L inversion and RDL sweep</a></li>
 <li class="toctree-l1"><a class="reference internal" href="simulation.html">Simulation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#training-cxt-models">Training cxt models</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#narrow-model">Narrow model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#broad-models">Broad models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#vanilla-broad-model">Vanilla broad model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#broad-w200-fine-tuning-for-large-populations">Broad_w200 (fine-tuning for large populations)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#broad-w200-missing-missingness-aware-fine-tuning">Broad_w200_missing (missingness-aware fine-tuning)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#broad-w200-missing-longer-schedule">Broad_w200_missing (longer schedule)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#adapter-n10-training">Adapter / n10 training</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#broad-adapter-n10">Broad + adapter (n10)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#broad-w200-missing-n10-all-in-one">Broad_w200_missing_n10 (all-in-one)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#practical-notes">Practical notes</a></li>
+</ul>
+</li>
 </ul>
 
         </div>
@@ -78,6 +100,154 @@
   <section id="training">
 <h1>Training<a class="headerlink" href="#training" title="Link to this heading"></a></h1>
 <p><code class="docutils literal notranslate"><span class="pre">cxt</span></code> is trained using the Pytorch Lightning framework. The following code demonstrates how to train the model.</p>
+</section>
+<section id="training-cxt-models">
+<h1>Training cxt models<a class="headerlink" href="#training-cxt-models" title="Link to this heading"></a></h1>
+<p>This page documents the command-line recipes used to train the pretrained
+<span class="math notranslate nohighlight">\(\mathbf{cxt}\)</span> model variants shipped with the toolkit.</p>
+<p>All training runs are launched via <code class="docutils literal notranslate"><span class="pre">train2.py</span></code> (standard sample size) or
+<code class="docutils literal notranslate"><span class="pre">train2_n10.py</span></code> (sample-size transfer / adapter training), using multi-GPU
+data-parallel training.</p>
+<p>The main knobs are:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--dataset_path</span></code>: path to a preprocessed training dataset directory</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gpus</span></code>: list of GPU indices to use (e.g. <code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">1</span> <span class="pre">2</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--num_epochs</span></code>: number of epochs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--learning_rate</span></code>: (optional) override learning rate for fine-tuning</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--checkpoint_path</span></code>: (optional) initialize from a pretrained checkpoint
+(fine-tuning / continued training)</p></li>
+</ul>
+<p>—</p>
+<section id="narrow-model">
+<h2>Narrow model<a class="headerlink" href="#narrow-model" title="Link to this heading"></a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">narrow</span></code> model is trained from scratch on the default processed dataset
+and typically run for more epochs than <code class="docutils literal notranslate"><span class="pre">broad</span></code>.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>train2.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts/processed<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">6</span>
+</pre></div>
+</div>
+<p>—</p>
+</section>
+<section id="broad-models">
+<h2>Broad models<a class="headerlink" href="#broad-models" title="Link to this heading"></a></h2>
+<section id="vanilla-broad-model">
+<h3>Vanilla broad model<a class="headerlink" href="#vanilla-broad-model" title="Link to this heading"></a></h3>
+<p>The vanilla <code class="docutils literal notranslate"><span class="pre">broad</span></code> model is trained from scratch on the default dataset and
+converges quickly (short training schedule).</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>train2.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts/processed<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">2</span>
+</pre></div>
+</div>
+</section>
+<section id="broad-w200-fine-tuning-for-large-populations">
+<h3>Broad_w200 (fine-tuning for large populations)<a class="headerlink" href="#broad-w200-fine-tuning-for-large-populations" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">broad_w200</span></code> model is obtained by fine-tuning the vanilla broad checkpoint
+on a dataset with a smaller window size (<code class="docutils literal notranslate"><span class="pre">w200</span></code>) and large-population regimes.
+This run uses a reduced learning rate and a pretrained initialization via
+<code class="docutils literal notranslate"><span class="pre">--checkpoint_path</span></code>.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>train2.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts_large_pop/processed_small_window<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--learning_rate<span class="w"> </span>3e-5<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint_path<span class="w"> </span>/home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch<span class="o">=</span><span class="m">1</span>-step<span class="o">=</span><span class="m">5280</span>.ckpt
+</pre></div>
+</div>
+</section>
+<section id="broad-w200-missing-missingness-aware-fine-tuning">
+<h3>Broad_w200_missing (missingness-aware fine-tuning)<a class="headerlink" href="#broad-w200-missing-missingness-aware-fine-tuning" title="Link to this heading"></a></h3>
+<p>This variant fine-tunes from the same broad checkpoint, but on datasets that
+include missingness patterns. <strong>Important:</strong> ensure singleton masking is
+deactivated for this training regime (either by configuration or manually).</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Make sure to deactivate singleton masking (if not done automatically)</span>
+python<span class="w"> </span>train2.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--learning_rate<span class="w"> </span>3e-5<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint_path<span class="w"> </span>/home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch<span class="o">=</span><span class="m">1</span>-step<span class="o">=</span><span class="m">5280</span>.ckpt
+</pre></div>
+</div>
+</section>
+<section id="broad-w200-missing-longer-schedule">
+<h3>Broad_w200_missing (longer schedule)<a class="headerlink" href="#broad-w200-missing-longer-schedule" title="Link to this heading"></a></h3>
+<p>Same as above, but with a longer fine-tuning schedule to improve robustness and
+reduce variance under heavy masking.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Same as previous but with more epochs</span>
+python<span class="w"> </span>train2.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--learning_rate<span class="w"> </span>3e-5<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint_path<span class="w"> </span>/home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch<span class="o">=</span><span class="m">1</span>-step<span class="o">=</span><span class="m">5280</span>.ckpt
+</pre></div>
+</div>
+<p>—</p>
+</section>
+</section>
+<section id="adapter-n10-training">
+<h2>Adapter / n10 training<a class="headerlink" href="#adapter-n10-training" title="Link to this heading"></a></h2>
+<p>In addition to the base models, <span class="math notranslate nohighlight">\(\mathbf{cxt}\)</span> supports sample-size
+transfer using lightweight adapter modules. These are trained via
+<code class="docutils literal notranslate"><span class="pre">train2_n10.py</span></code> and typically initialize from a broad-family checkpoint.</p>
+<section id="broad-adapter-n10">
+<h3>Broad + adapter (n10)<a class="headerlink" href="#broad-adapter-n10" title="Link to this heading"></a></h3>
+<p>This script is currently configured to automatically load the broad model
+checkpoint (if not provided explicitly) and train an adapter for inference on
+<code class="docutils literal notranslate"><span class="pre">n=10</span></code> sample settings.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>train2_n10.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts/processed_n10<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">3</span>
+</pre></div>
+</div>
+</section>
+<section id="broad-w200-missing-n10-all-in-one">
+<h3>Broad_w200_missing_n10 (all-in-one)<a class="headerlink" href="#broad-w200-missing-n10-all-in-one" title="Link to this heading"></a></h3>
+<p>This run trains the missingness-aware small-window / n10 setup, initializing
+from the <code class="docutils literal notranslate"><span class="pre">broad+adapter</span></code> checkpoint. Adjust <code class="docutils literal notranslate"><span class="pre">--num_epochs</span></code> depending on
+whether you want a short run or a longer schedule.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># uses broad+adapter checkpoint</span>
+python<span class="w"> </span>train2_n10.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data_n10<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--learning_rate<span class="w"> </span>3e-5<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint_path<span class="w"> </span>/sietch_colab/data_share/cxt/models/broad+adapter/version_26/checkpoints/epoch<span class="o">=</span><span class="m">2</span>-step<span class="o">=</span><span class="m">792</span>.ckpt
+
+<span class="c1"># longer schedule (same command, more epochs)</span>
+python<span class="w"> </span>train2_n10.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset_path<span class="w"> </span>/sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data_n10<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_epochs<span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--learning_rate<span class="w"> </span>3e-5<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint_path<span class="w"> </span>/sietch_colab/data_share/cxt/models/broad+adapter/version_26/checkpoints/epoch<span class="o">=</span><span class="m">2</span>-step<span class="o">=</span><span class="m">792</span>.ckpt
+</pre></div>
+</div>
+<p>—</p>
+</section>
+</section>
+<section id="practical-notes">
+<h2>Practical notes<a class="headerlink" href="#practical-notes" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Checkpoints:</strong> training uses PyTorch Lightning checkpoints; the
+<code class="docutils literal notranslate"><span class="pre">--checkpoint_path</span></code> argument performs warm-start initialization and is used
+for fine-tuning regimes (e.g., <code class="docutils literal notranslate"><span class="pre">broad_w200</span></code> and missingness-aware variants).</p></li>
+<li><p><strong>Datasets:</strong> each <code class="docutils literal notranslate"><span class="pre">--dataset_path</span></code> directory is expected to contain the
+preprocessed windows/blocks produced by the dataset preprocessing pipeline.
+Use consistent preprocessing settings (window size, masking rules) between
+training and the intended downstream inference use-case.</p></li>
+<li><p><strong>Singleton masking:</strong> for missingness-aware training, singleton masking
+should be disabled to avoid confounding real missingness with artificially
+dropped rare variants.</p></li>
+<li><p><strong>Multi-GPU:</strong> <code class="docutils literal notranslate"><span class="pre">--gpus</span> <span class="pre">0</span> <span class="pre">1</span> <span class="pre">2</span></code> selects GPUs by index. Ensure that the CUDA
+visible devices match the indices you pass, especially on shared machines.</p></li>
+</ul>
+</section>
 </section>
 
 
