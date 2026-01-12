@@ -135,6 +135,50 @@ sample combinations (“pivot pairs”) among 50 samples.</p>
 <span class="p">]</span>
 </pre></div>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Depending on how genomic blocks and pivot pairs are specified, two common usage
+patterns naturally arise. In a <em>targeted</em> pattern, inference is concentrated on
+specific loci or narrow genomic intervals by evaluating many pivot pairs at those
+positions, increasing depth at regions of interest. In a complementary <em>long-range</em>
+pattern, inference is distributed across large, contiguous genomic regions using a
+more limited set of pivot pairs, enabling efficient genome-wide or chromosome-scale
+decoding.</p>
+<p>In the configuration shown above, inference budget is allocated primarily to
+pairwise depth: a single 1 Mb genomic block is decoded while all pairwise
+combinations among 50 samples are evaluated:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Targeted pattern: few blocks, many pivot pairs</span>
+<span class="n">blocks</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1_000_000</span><span class="p">)]</span>
+
+<span class="n">num_samples</span> <span class="o">=</span> <span class="mi">50</span>
+<span class="n">pivot_pairs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_samples</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">num_samples</span><span class="p">)</span>
+<span class="p">]</span>
+</pre></div>
+</div>
+<p>Hypothetically, a long-range configuration would instead distribute inference
+across many genomic blocks while restricting the number of pivot pairs evaluated
+per block, for example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Long-range pattern: many blocks, fewer pivot pairs</span>
+<span class="n">blocks</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="mi">1_000_000</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">50_000_000</span><span class="p">,</span> <span class="mi">1_000_000</span><span class="p">)</span>
+<span class="p">]</span>
+
+<span class="n">pivot_pairs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<span class="p">]</span>
+</pre></div>
+</div>
+<p>Both behaviors are supported by the same API and arise implicitly from user-level
+choices of regions and pivot pairs. The example shown here follows the targeted
+pattern, while the human and mosquito analyses presented later use the long-range
+pattern to decode extended genomic regions.</p>
+</div>
 </section>
 <section id="inference-with-cxt-api2-translate">
 <h2>Inference with <code class="xref py py-func docutils literal notranslate"><span class="pre">cxt.api2.translate()</span></code><a class="headerlink" href="#inference-with-cxt-api2-translate" title="Link to this heading"></a></h2>

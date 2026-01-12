@@ -52,6 +52,57 @@ sample combinations (“pivot pairs”) among 50 samples.
         for j in range(i + 1, num_samples)
     ]
 
+
+.. note::
+
+    Depending on how genomic blocks and pivot pairs are specified, two common usage
+    patterns naturally arise. In a *targeted* pattern, inference is concentrated on
+    specific loci or narrow genomic intervals by evaluating many pivot pairs at those
+    positions, increasing depth at regions of interest. In a complementary *long-range*
+    pattern, inference is distributed across large, contiguous genomic regions using a
+    more limited set of pivot pairs, enabling efficient genome-wide or chromosome-scale
+    decoding.
+
+    In the configuration shown above, inference budget is allocated primarily to
+    pairwise depth: a single 1 Mb genomic block is decoded while all pairwise
+    combinations among 50 samples are evaluated:
+
+    .. code-block:: python
+
+        # Targeted pattern: few blocks, many pivot pairs
+        blocks = [(0, 1_000_000)]
+
+        num_samples = 50
+        pivot_pairs = [
+            (i, j)
+            for i in range(num_samples)
+            for j in range(i + 1, num_samples)
+        ]
+
+    Hypothetically, a long-range configuration would instead distribute inference
+    across many genomic blocks while restricting the number of pivot pairs evaluated
+    per block, for example:
+
+    .. code-block:: python
+
+        # Long-range pattern: many blocks, fewer pivot pairs
+        blocks = [
+            (start, start + 1_000_000)
+            for start in range(0, 50_000_000, 1_000_000)
+        ]
+
+        pivot_pairs = [
+            (i, j)
+            for i in range(10)
+            for j in range(i + 1, 10)
+        ]
+
+    Both behaviors are supported by the same API and arise implicitly from user-level
+    choices of regions and pivot pairs. The example shown here follows the targeted
+    pattern, while the human and mosquito analyses presented later use the long-range
+    pattern to decode extended genomic regions.
+
+
 Inference with :func:`cxt.api2.translate`
 -----------------------------------------
 
