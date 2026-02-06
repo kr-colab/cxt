@@ -6,9 +6,7 @@ pytest
 numpy
 torch
 torchtune
-
 torchao
-torchtune
 
 lightning
 msprime

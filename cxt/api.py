@@ -1,16 +1,13 @@
+import sys
 import numpy as np
 import torch
 import torch.multiprocessing as mp
+from torch.serialization import add_safe_globals
 from cxt.train import LitTokenFreeDecoder
+from cxt.config import BroadModelConfig
 
-from cxt.config import BroadModelConfig 
 TokenFreeDecoderConfig = BroadModelConfig
 config = TokenFreeDecoderConfig()
-from torch.serialization import add_safe_globals
-
-import sys
-import torch
-from torch.serialization import add_safe_globals
 
 def load_model(config, model_path: str, device: str = "cuda"):
     # ——— 0) Prep the unpickler so that if it DOES need to unpickle
