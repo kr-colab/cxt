@@ -10,7 +10,6 @@ from cxt.utils import simulate_parameterized_tree_sequence, interpolate_tmrcas
 import argparse
 import random
 import stdpopsim
-import numpy as np
 from typing import List, Dict, Optional
 import sys
 from multiprocessing import get_context

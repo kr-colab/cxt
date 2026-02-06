@@ -278,18 +278,11 @@ def ts2input_numpy(ts, pivot_A, pivot_B, offset=0, ignore_target=False):
         tgt = np.ones(src.shape[1], dtype=int) * 2
     return src, tgt
 
-#def generate_causal_mask(seq_len, device):
-#    mask = torch.tril(torch.ones((seq_len, seq_len), device=device)).bool()
-#    return mask.unsqueeze(0).unsqueeze(0)  # [1, 1, T, T]
-
 def generate_causal_mask(seq_len, full_attention_n=None, device="cpu"):
     full_attention_n = full_attention_n if full_attention_n is not None else 0
     mask = torch.tril(torch.ones(seq_len, seq_len, device=device))
     mask[:full_attention_n, :full_attention_n] = 1  # Full attention for first n tokens
     return mask.bool().unsqueeze(0).unsqueeze(0)
-
-
-
 
 
 
@@ -481,52 +474,6 @@ def stochastic_diversity_bias_correction_v2(
     return_intercept: bool = False,
     rng: np.random.Generator = None,
     sequence_length = 1e6,
-) -> (np.ndarray, np.ndarray):
-    r"""
-    Correct the predicted TMRCAs such that expected diversity matches
-    observed diversity, for a given mutation rate. This is done stochastically,
-    by using the fact that under the model,
-
-        mutation_count ~ Poisson(2 * correction * mu * \sum_i TMRCA_i * window_size_i)
-    
-    the posterior (given improper constant prior) is,
-
-        correction ~ Gamma(mutation_count + 1, 2 * mu * \sum_i TMRCA_i * window_size_i)
-
-    and sampling accordingly (e.g. iid for each TMRCA sample, pivot pair).
-    
-    The input predictions are assumed to have dimensions 
-    `(replicates, pairs, windows)`.
-    """
-    assert predictions.ndim == 3
-    assert pivot_pairs.ndim == 2
-    assert pivot_pairs.shape[0] == predictions.shape[1]
-    assert pivot_pairs.shape[1] == 2
-    if rng is None: rng = np.random.default_rng()
-    mutation_count = get_mutation_count(genotype_matrix, pivot_pairs)
-    corrected = []
-    intercept = []
-    for log_tmrca in predictions:
-        rate = 2 * np.exp(log_tmrca).mean(axis=-1) * mutation_rate * sequence_length
-        correction = rng.gamma(shape=mutation_count + 1, scale=1 / rate)
-        corrected.append(log_tmrca + np.log(correction)[:, np.newaxis])
-        intercept.append(
-            np.log(np.exp(log_tmrca).mean(axis=-1) * correction)[:, np.newaxis]
-        )
-    corrected = np.stack(corrected)
-    intercept = np.stack(intercept)
-    return corrected if not return_intercept else (corrected, intercept)
-
-
-
-def stochastic_diversity_bias_correction_v2(
-    genotype_matrix: np.ndarray,
-    mutation_rate: float,
-    predictions: np.ndarray,
-    pivot_pairs: np.ndarray,
-    return_intercept: bool = False,
-    rng: np.random.Generator = None,
-    sequence_length = 1e6,
     window_size: int = 200,
     availability_mask = None,
     mask_missingness: bool = False,
@@ -578,22 +525,6 @@ def stochastic_diversity_bias_correction_v2(
 
   
 
-"""
-def get_mutation_count_per_edge(gm, pivot_pairs=[(0, 1), (0, 2)], edges=None, positions=None):
-    assert edges is not None and positions is not None, "edges and positions required"
-    edges = np.asarray(edges)
-    positions = np.asarray(positions)
-    n_edges = len(edges) - 1
-    mutation_counts = np.zeros((len(pivot_pairs), n_edges), dtype=int)
-    for i, (pivot_A, pivot_B) in enumerate(pivot_pairs):
-        gm_A, gm_B = gm[pivot_A], gm[pivot_B]
-        diffs = (gm_A ^ gm_B).astype(bool)
-        for j in range(n_edges):
-            lo, hi = edges[j], edges[j + 1]
-            in_edge = (positions >= lo) & (positions < hi)
-            mutation_counts[i, j] = np.count_nonzero(diffs[in_edge])
-    return mutation_counts.T
-"""
 
 
 
@@ -628,25 +559,6 @@ def coalescence_rates(ancestor_times, time_windows, epsilon=1e-3):
         rates = np.append(rates, 1 / np.mean(ancestor_times[idx == last - 1] - time_windows[-1]))
     return np.append(rates, [np.nan] * (num_windows - rates.size))
 
-
-
-#from cxt.inference import load_model
-"""
-def setup_cxt_model(model_type='broad'):
-    if model_type == 'broad':
-        import sys
-        from cxt.config import BroadModelConfig
-        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
-        TokenFreeDecoderConfig = BroadModelConfig
-        device = 'cpu'
-        config = TokenFreeDecoderConfig(device=device)
-        config.batch_size = 1
-        model_path = '/home/kkor/cxt/cxt/lightning_logs/version_5/checkpoints/epoch=2-step=5649.ckpt'
-        model = load_model(config=config, model_path=model_path, device=device)
-        return model
-    elif model_type == 'narrow':
-        pass
-"""
 
 def setup_cxt_model(model_type: str = "broad"):
     """
