@@ -1,3 +1,5 @@
 *.log
 cache.pkl
 __pycache__/
+archive
+archive.tar.gz

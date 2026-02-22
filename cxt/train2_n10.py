@@ -307,7 +307,7 @@ if __name__ == "__main__":
         n_head: int = 4
         device: str = "cuda"
         batch_size: int = config['training']['batch_size']
-        mask_singletons: bool = False
+        mask_singletons: bool = True#False
     
     from cxt.dataset2 import PairDataset
     train_dataset = PairDataset(root=dataset_path, split="train", mmap=True)
@@ -349,7 +349,12 @@ if __name__ == "__main__":
             new_mask_index=0,
             training_config=config['training'],
         )
+        # for training just adapter
+        lit_model.model.backbone.transformer.bt2ls.config.mask_singletons = True
     
+
+    print(f"State of singleton masking: {lit_model.model.backbone.transformer.bt2ls.config.mask_singletons}")
+    print(f"Should be False when training with missing data, True when training with full data.")
 
     torch.set_float32_matmul_precision('medium')
     trainer = L.Trainer(

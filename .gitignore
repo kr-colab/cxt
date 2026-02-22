@@ -9,6 +9,16 @@ models
 figures_paper
 cxt/scripts/parameter_scripts/parameter
 build
+cxt/api
+archive
+archive.tar.gz
+
+# figures: generated outputs and caches
+figures/output/
+figures/**/__pycache__
+
+# revision
+revision/
 
 # vim
 *.swp

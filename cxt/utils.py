@@ -523,6 +523,7 @@ def stochastic_diversity_bias_correction_v2(
 
 
 
+
   
 
 
@@ -720,3 +721,261 @@ def discretize(sequence, population_time):
     indices = np.clip(indices, 0, len(population_time) - 1)
     return indices
 
+
+
+
+import os
+import hashlib
+import requests
+from pathlib import Path
+from typing import Optional
+
+def get_cache_dir() -> Path:
+    """Get the cache directory for model checkpoints."""
+    cache_dir = Path.home() / ".cache" / "cxt" / "checkpoints"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+def download_checkpoint(
+    github_url: str,
+    cache_path: Path,
+    chunk_size: int = 8192
+) -> None:
+    """
+    Download a checkpoint file from GitHub LFS.
+    
+    Args:
+        github_url: Full URL to the checkpoint file on GitHub
+        cache_path: Local path where the file should be saved
+        chunk_size: Size of chunks for streaming download
+    """
+    print(f"Downloading checkpoint from {github_url}...")
+    
+    response = requests.get(github_url, stream=True)
+    response.raise_for_status()
+    
+    total_size = int(response.headers.get('content-length', 0))
+    
+    with open(cache_path, 'wb') as f:
+        downloaded = 0
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if chunk:
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total_size > 0:
+                    progress = (downloaded / total_size) * 100
+                    print(f"\rProgress: {progress:.1f}%", end='')
+    
+    print(f"\nCheckpoint saved to {cache_path}")
+
+def get_checkpoint_path(
+    model_type: str,
+    checkpoint_filename: str,
+    github_base_url: str = "https://github.com/kevinkorfmann/cxt/raw/main/checkpoints"
+) -> Path:
+    """
+    Get the local path to a checkpoint, downloading it if necessary.
+    
+    Args:
+        model_type: Type of model (e.g., "broad", "narrow")
+        checkpoint_filename: Name of the checkpoint file
+        github_base_url: Base URL for checkpoint downloads
+    
+    Returns:
+        Path to the local checkpoint file
+    """
+    cache_dir = get_cache_dir()
+    model_dir = cache_dir / model_type
+    model_dir.mkdir(parents=True, exist_ok=True)
+    
+    checkpoint_path = model_dir / checkpoint_filename
+    
+    # Check if checkpoint already exists
+    if checkpoint_path.exists():
+        print(f"Using cached checkpoint: {checkpoint_path}")
+        return checkpoint_path
+    
+    # Download if not found
+    github_url = f"{github_base_url}/{model_type}/{checkpoint_filename}"
+    download_checkpoint(github_url, checkpoint_path)
+    
+    return checkpoint_path
+
+# Checkpoint configuration mapping
+CHECKPOINT_CONFIG = {
+    "broad": {
+        "filename": "broad_epoch=1-step=5280.ckpt",
+        "version": "version_20"
+    },
+    "broad+adapter": {
+        "filename": "broad_adapter_epoch=2-step=792.ckpt",
+        "version": "version_26"
+    },
+    "narrow": {
+        "filename": "narrow_epoch=5-step=4692.ckpt",
+        "version": "version_47"
+    },
+    "broad_w200": {
+        "filename": "broad_w200_epoch=1-step=944.ckpt",
+        "version": "version_29"
+    },
+    "residual": {
+        "filename": "residual_epoch=1-step=5280.ckpt",
+        "version": "version_46"
+    },
+    "w200_wmissing": {
+        "filename": "w200_wmissing_epoch=1-step=944.ckpt",
+        "version": "version_48"
+    },
+    "w200_wmissing_adapter": {
+        "filename": "w200_wmissing_adapter_epoch=9-step=480.ckpt",
+        "version": "version_50"
+    }
+}
+
+def setup_cxt_model(
+    model_type: str = "broad",
+    github_base_url: str = "https://github.com/kevinkorfmann/cxt/raw/main/checkpoints",
+    force_local: Optional[str] = None
+):
+    """
+    Build a CPU model using lazy imports (spawn-safe).
+    Downloads checkpoints from GitHub LFS if not cached locally.
+    
+    Args:
+        model_type: Type of model to load
+        github_base_url: Base URL for GitHub checkpoint downloads
+        force_local: If provided, use this local path instead of downloading
+    """
+    import sys
+    import importlib
+    
+    # Get checkpoint path (download if needed)
+    if force_local:
+        model_path = force_local
+    else:
+        checkpoint_info = CHECKPOINT_CONFIG.get(model_type)
+        if not checkpoint_info:
+            raise ValueError(f"Unknown model_type: {model_type}")
+        
+        model_path = str(get_checkpoint_path(
+            model_type,
+            checkpoint_info["filename"],
+            github_base_url
+        ))
+    
+    if model_type == "broad":
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+        
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
+    
+    elif model_type == "broad+adapter":
+        from cxt.train2_n10 import LitTokenFreeDecoder
+        IE_NEW = 10
+        
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        gpt_config = TokenFreeDecoderConfig(device="cpu")
+        
+        model = LitTokenFreeDecoder.load_from_checkpoint(
+            model_path,
+            gpt_config=gpt_config,
+            ie_new=IE_NEW,
+            adapter_bottleneck=32,
+            adapter_dropout=0.0,
+            new_mask_index=0,
+            training_config=1,
+        )
+        return model.model
+    
+    elif model_type == "narrow":
+        NarrowModelConfig = importlib.import_module("cxt.config").NarrowModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+        sys.modules['__main__'].TokenFreeDecoderConfig = NarrowModelConfig
+        TokenFreeDecoderConfig = NarrowModelConfig
+        
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
+    
+    elif model_type == "broad_w200":
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+        
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        config.window_size = 200
+        
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
+    
+    elif model_type == "residual":
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+        
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        
+        model = load_model(config=config, model_path=model_path, device=device)
+        return model
+    
+    elif model_type == "w200_wmissing":
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        load_model = importlib.import_module("cxt.inference").load_model
+        
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        
+        device = "cpu"
+        config = TokenFreeDecoderConfig(device=device)
+        config.batch_size = 1
+        config.window_size = 200
+        
+        model = load_model(config=config, model_path=model_path, device=device)
+        model.transformer.bt2ls.config.mask_singletons = False
+        return model
+    
+    elif model_type == "w200_wmissing_adapter":
+        from cxt.train2_n10 import LitTokenFreeDecoder
+        IE_NEW = 10
+        
+        BroadModelConfig = importlib.import_module("cxt.config").BroadModelConfig
+        sys.modules['__main__'].TokenFreeDecoderConfig = BroadModelConfig
+        TokenFreeDecoderConfig = BroadModelConfig
+        gpt_config = TokenFreeDecoderConfig(device="cpu")
+        gpt_config.window_size = 200
+        
+        model = LitTokenFreeDecoder.load_from_checkpoint(
+            model_path,
+            gpt_config=gpt_config,
+            ie_new=IE_NEW,
+            adapter_bottleneck=32,
+            adapter_dropout=0.0,
+            new_mask_index=0,
+            training_config=1,
+        )
+        return model.model
+    
+    else:
+        raise ValueError(f"Unknown model_type: {model_type}")
