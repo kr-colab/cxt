@@ -1,120 +1,156 @@
-from torch.utils.data import Dataset
-import torch
-from pathlib import Path
+"""Training datasets for cxt.
+
+``PairDataset`` is the canonical dataset: each item is one pair from one
+tree-sequence simulation, stored as ``(X.npy, y.npy)`` per directory.
+Memory-mapped loading with O(files) shuffle.
+
+The legacy ``LazyDataset`` / ``MultiDirLazyDataset`` classes have been removed.
+"""
+
+from __future__ import annotations
+
+import os
 import numpy as np
-from typing import Literal
-from cxt.utils import TIMES
-
-def discretize(sequence, population_time):
-    indices = np.searchsorted(population_time, sequence, side="right") - 1
-    indices = np.clip(indices, 0, len(population_time) - 1)
-    return indices.tolist()
+import torch
+from torch.utils.data import Dataset, IterableDataset
 
 
-class LazyDataset(Dataset):
-    def __init__(self, data_dir: str, split: Literal['train', 'test'] = 'train', test_batches: int = 100):
-        super().__init__()
-        self.data_dir = Path(data_dir)
-        all_batches = sorted(self.data_dir.glob('X_*.npy'), key=lambda x: int(x.stem.split('_')[1]))
-        
-        # Split at batch level
-        if split == 'test':
-            self.files = all_batches[-test_batches:]
-        else:
-            self.files = all_batches[:-test_batches]
-            
-        # Cache file paths instead of opening mmaps
-        self.X_files = self.files
-        self.y_files = [str(f).replace('X_', 'y_') for f in self.files]
-            
-        # Get shape from first file
-        self.samples_per_batch = np.load(self.X_files[0]).shape[0]
-        
-    def __len__(self):
-        return len(self.files) * self.samples_per_batch
-        
-    def __getitem__(self, idx, discretize_target=True):
-        batch_idx = idx // self.samples_per_batch
-        sample_idx = idx % self.samples_per_batch
-        
-        # Load and process single sample
-        src = np.load(self.X_files[batch_idx], mmap_mode='r')[sample_idx].copy()
-        tgt = np.load(self.y_files[batch_idx], mmap_mode='r')[sample_idx].copy()
+# ---------------------------------------------------------------------------
+# Discretization grids (shared constants)
+# ---------------------------------------------------------------------------
 
-        if discretize_target:
-            tgt = np.array(discretize(tgt, TIMES))
-        
-        src = torch.from_numpy(src).float()
-        src = torch.log1p(src)
-        
-        tgt = torch.from_numpy(tgt).long() + 2
-        tgt = torch.cat([torch.tensor([1]), tgt])
-
-        return src, tgt
+GRID_SIZE = 324
+TIMES = np.linspace(3, 17, GRID_SIZE)
 
 
-    
+def discretize(sequence, grid):
+    idx = np.searchsorted(grid, sequence, side="right") - 1
+    np.clip(idx, 0, len(grid) - 1, out=idx)
+    return idx
 
-class MultiDirLazyDataset(Dataset):
-    def __init__(self, root_dir: str, split: Literal['train', 'test'] = 'train', test_ratio: float = 0.2):
-        """
-        A dataset that supports a hierarchy of subdirectories with a percentage-based split.
 
-        Args:
-            root_dir (str): Root directory containing subdirectories.
-            split (Literal['train', 'test']): Whether to use training or testing data.
-            test_ratio (float): Percentage of files in each subdirectory to use for testing.
-        """
-        super().__init__()
-        self.root_dir = Path(root_dir)
+# ---------------------------------------------------------------------------
+# PairDataset
+# ---------------------------------------------------------------------------
+
+class PairDataset(Dataset):
+    """One pair per item; file-order shuffle without disk I/O.
+
+    Parameters
+    ----------
+    root : str
+        Root directory containing ``train/`` and ``test/`` subdirectories.
+    split : str
+        ``"train"`` or ``"test"``.
+    mmap : bool
+        Use memory-mapped loading (recommended).
+    """
+
+    def __init__(self, root: str, split: str = "train", mmap: bool = True):
+        self.root = root
         self.split = split
-        self.test_ratio = test_ratio
-        self.X_files = []
-        self.y_files = []
+        self.mmap = mmap
 
-        # Recursively find all X_*.npy files
-        all_files = sorted(self.root_dir.rglob('X_*.npy'), key=lambda x: (x.parent, int(x.stem.split('_')[1])))
-        
-        # Group files by parent directory
-        from collections import defaultdict
-        grouped_files = defaultdict(list)
-        for file in all_files:
-            grouped_files[file.parent].append(file)
-        
-        for subdir, subdir_batches in grouped_files.items():
-            num_test_files = int(len(subdir_batches) * test_ratio)
+        self.items: list[tuple[str, str, int]] = []
+        self._file_spans: list[tuple[int, int]] = []
+        self._file_perm = None
+        self._cum_lengths_perm = None
 
-            if split == 'test':
-                selected_batches = subdir_batches[-num_test_files:]
-            else:
-                selected_batches = subdir_batches[:-num_test_files]
-
-            self.X_files.extend(selected_batches)
-            self.y_files.extend([str(f).replace('X_', 'y_') for f in selected_batches])
-
-        if self.X_files:
-            self.samples_per_batch = np.load(self.X_files[0]).shape[0]
-        else:
-            raise ValueError("No valid data found in the provided directory structure.")
+        split_dir = os.path.join(root, split)
+        for dirpath, _dirnames, filenames in os.walk(split_dir):
+            if "X.npy" in filenames and "y.npy" in filenames:
+                X_path = os.path.join(dirpath, "X.npy")
+                y_path = os.path.join(dirpath, "y.npy")
+                Y = np.load(y_path, mmap_mode="r") if mmap else np.load(y_path)
+                P = int(Y.shape[0])
+                if mmap:
+                    del Y
+                start = len(self.items)
+                for p_idx in range(P):
+                    self.items.append((X_path, y_path, p_idx))
+                self._file_spans.append((start, P))
 
     def __len__(self):
-        return len(self.X_files) * self.samples_per_batch
+        return len(self.items)
 
-    def __getitem__(self, idx, discretize_target=True):
-        batch_idx = idx // self.samples_per_batch
-        sample_idx = idx % self.samples_per_batch
+    def shuffle_files(self, seed=None):
+        """Shuffle file-block order. O(files), no disk I/O."""
+        F = len(self._file_spans)
+        if F <= 1:
+            self._file_perm = self._cum_lengths_perm = None
+            return
+        rng = np.random.default_rng(int(seed) if seed is not None else None)
+        perm = rng.permutation(F)
+        lengths = np.fromiter((L for _, L in self._file_spans), dtype=np.int64, count=F)
+        self._file_perm = perm.astype(np.int32)
+        self._cum_lengths_perm = np.cumsum(lengths[perm], dtype=np.int64)
 
-        src = np.load(self.X_files[batch_idx], mmap_mode='r')[sample_idx].copy()
-        tgt = np.load(self.y_files[batch_idx], mmap_mode='r')[sample_idx].copy()
+    def set_epoch(self, epoch: int):
+        self.shuffle_files(seed=epoch)
 
-        if discretize_target:
-            tgt = np.array(discretize(tgt, TIMES))
+    def _map_idx(self, i: int) -> int:
+        if self._file_perm is None:
+            return i
+        k = int(np.searchsorted(self._cum_lengths_perm, i, side="right"))
+        prev = 0 if k == 0 else int(self._cum_lengths_perm[k - 1])
+        file_idx = int(self._file_perm[k])
+        start, L = self._file_spans[file_idx]
+        return start + min(i - prev, L - 1)
 
-        src = torch.from_numpy(src).float()
-        src = torch.log1p(src)
+    def __getitem__(self, i):
+        j = self._map_idx(int(i))
+        X_path, y_path, p_idx = self.items[j]
 
-        tgt = torch.from_numpy(tgt).long() + 2
-        tgt = torch.cat([torch.tensor([1]), tgt])
+        X = np.load(X_path, mmap_mode="r") if self.mmap else np.load(X_path)
+        y = np.load(y_path, mmap_mode="r") if self.mmap else np.load(y_path)
 
-        return src, tgt
+        Xi = torch.tensor(X[p_idx]).float()
+        Xi = torch.log1p(Xi)
 
+        yi = y[p_idx]
+        yi = torch.tensor(discretize(yi, TIMES)).long() + 2
+        yi = torch.cat([torch.tensor([1]), yi])
+
+        return Xi, yi
+
+
+# ---------------------------------------------------------------------------
+# Optional shuffle-buffer wrapper for distributed training
+# ---------------------------------------------------------------------------
+
+class ShuffleBufferDataset(IterableDataset):
+    """Wrap any map-style dataset with a streaming shuffle buffer."""
+
+    def __init__(self, ds: Dataset, buffer_size: int = 8192, seed: int = 1234):
+        self.ds = ds
+        self.buffer_size = int(buffer_size)
+        self.seed = int(seed)
+
+    def __len__(self):
+        return len(self.ds)
+
+    def __iter__(self):
+        rng = np.random.default_rng(self.seed)
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            rank = torch.distributed.get_rank()
+            world = torch.distributed.get_world_size()
+        else:
+            rank, world = 0, 1
+
+        N = len(self.ds)
+        src = iter(range(rank, N, world))
+
+        buf = []
+        for _ in range(min(self.buffer_size, (N + world - 1) // world)):
+            i = next(src, None)
+            if i is None:
+                break
+            buf.append(i)
+
+        while buf:
+            j = int(rng.integers(0, len(buf)))
+            idx = buf.pop(j)
+            yield self.ds[idx]
+            nxt = next(src, None)
+            if nxt is not None:
+                buf.append(nxt)

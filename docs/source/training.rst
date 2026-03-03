@@ -1,175 +1,285 @@
 Training
 ========
 
-``cxt`` is trained using the Pytorch Lightning framework. The following code demonstrates how to train the model.
+All cxt model variants are trained using a single unified script
+(``python -m cxt.train``) built on PyTorch Lightning. This page documents the
+exact commands that reproduce every checkpoint shipped with the package.
 
-Training cxt models
-===================
 
-This page documents the command-line recipes used to train the pretrained
-:math:`\mathbf{cxt}` model variants shipped with the toolkit.
+Checkpoint dependency graph
+---------------------------
 
-All training runs are launched via ``train2.py`` (standard sample size) or
-``train2_n10.py`` (sample-size transfer / adapter training), using multi-GPU
-data-parallel training.
+The seven released checkpoints form a dependency chain. Models lower in the
+graph are fine-tuned from checkpoints higher up:
 
-The main knobs are:
+.. code-block:: text
 
-- ``--dataset_path``: path to a preprocessed training dataset directory
-- ``--gpus``: list of GPU indices to use (e.g. ``0 1 2``)
-- ``--num_epochs``: number of epochs
-- ``--learning_rate``: (optional) override learning rate for fine-tuning
-- ``--checkpoint_path``: (optional) initialize from a pretrained checkpoint
-  (fine-tuning / continued training)
+   narrow  (from scratch on "processed")
+   residual  (from scratch on "processed")
 
----
+   broad  (from scratch on "processed")
+     ├── broad+adapter  (adapter on "processed_n10", frozen broad backbone)
+     └── broad_w200  (fine-tuned on "processed_small_window")
+           └── w200_wmissing  (fine-tuned on "processed_small_window_missing_data")
+                 └── w200_wmissing_adapter  (adapter on "processed_small_window_missing_data_n10")
 
-Narrow model
-------------
 
-The ``narrow`` model is trained from scratch on the default processed dataset
-and typically run for more epochs than ``broad``.
+CLI reference
+-------------
 
-.. code-block:: bash
+.. code-block:: text
 
-    python train2.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts/processed \
-      --gpus 0 1 2 \
-      --num_epochs 6
+   python -m cxt.train \
+       --model <preset_name> \
+       --dataset-path <preprocessed_dir> \
+       --gpus <gpu_ids> \
+       --epochs <n> \
+       [--lr <learning_rate>] \
+       [--batch-size <bs>] \
+       [--grad-accum <steps>] \
+       [--checkpoint <path_or_model_type>] \
+       [--adapter] \
+       [--adapter-samples <n>] \
+       [--adapter-bottleneck <dim>] \
+       [--log-dir <directory>]
 
----
+Key arguments:
 
-Broad models
-------------
+- ``--model``: preset name (``narrow``, ``broad``, ``broad_w200``,
+  ``residual``, ``w200_wmissing``)
+- ``--dataset-path``: path to a preprocessed dataset (must contain
+  ``train/`` and ``test/`` subdirectories)
+- ``--gpus``: GPU indices (e.g. ``0 1 2``)
+- ``--checkpoint``: warm-start from checkpoint (for fine-tuning)
+- ``--adapter``: enable adapter training with frozen backbone
+- ``--adapter-samples``: adapter input dimension (sample count)
+- ``--log-dir``: root directory for ``lightning_logs/`` (default: current
+  working directory). Use this to redirect checkpoints and TensorBoard
+  logs to an isolated directory.
 
-Vanilla broad model
-^^^^^^^^^^^^^^^^^^^
 
-The vanilla ``broad`` model is trained from scratch on the default dataset and
-converges quickly (short training schedule).
+Reproducing all checkpoints
+---------------------------
 
-.. code-block:: bash
+Below are the exact commands for each checkpoint. Replace paths with your
+actual directories.
 
-    python train2.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts/processed \
-      --gpus 0 1 2 \
-      --num_epochs 2
 
-Broad_w200 (fine-tuning for large populations)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1. ``narrow``
+^^^^^^^^^^^^^
 
-The ``broad_w200`` model is obtained by fine-tuning the vanilla broad checkpoint
-on a dataset with a smaller window size (``w200``) and large-population regimes.
-This run uses a reduced learning rate and a pretrained initialization via
-``--checkpoint_path``.
+Trained from scratch. 6 layers, 6 epochs.
 
-.. code-block:: bash
-
-    python train2.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts_large_pop/processed_small_window \
-      --gpus 0 1 2 \
-      --num_epochs 2 \
-      --learning_rate 3e-5 \
-      --checkpoint_path /home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch=1-step=5280.ckpt
-
-Broad_w200_missing (missingness-aware fine-tuning)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-This variant fine-tunes from the same broad checkpoint, but on datasets that
-include missingness patterns. **Important:** ensure singleton masking is
-deactivated for this training regime (either by configuration or manually).
+**Checkpoint:** ``narrow_epoch=5-step=4692.ckpt``
 
 .. code-block:: bash
 
-    # Make sure to deactivate singleton masking (if not done automatically)
-    python train2.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data \
-      --gpus 0 1 2 \
-      --num_epochs 2 \
-      --learning_rate 3e-5 \
-      --checkpoint_path /home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch=1-step=5280.ckpt
+   python -m cxt.train \
+       --model narrow \
+       --dataset-path /path/to/processed \
+       --gpus 0 1 2 \
+       --epochs 6
 
-Broad_w200_missing (longer schedule)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Same as above, but with a longer fine-tuning schedule to improve robustness and
-reduce variance under heavy masking.
+2. ``broad``
+^^^^^^^^^^^^
 
-.. code-block:: bash
+Trained from scratch. 10 layers, 2 epochs. This is the main model and
+serves as the backbone for all downstream fine-tuning.
 
-    # Same as previous but with more epochs
-    python train2.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data \
-      --gpus 0 1 2 \
-      --num_epochs 10 \
-      --learning_rate 3e-5 \
-      --checkpoint_path /home/kkor/cxt/cxt/lightning_logs/version_20/checkpoints/epoch=1-step=5280.ckpt
-
----
-
-Adapter / n10 training
-----------------------
-
-In addition to the base models, :math:`\mathbf{cxt}` supports sample-size
-transfer using lightweight adapter modules. These are trained via
-``train2_n10.py`` and typically initialize from a broad-family checkpoint.
-
-Broad + adapter (n10)
-^^^^^^^^^^^^^^^^^^^^^
-
-This script is currently configured to automatically load the broad model
-checkpoint (if not provided explicitly) and train an adapter for inference on
-``n=10`` sample settings.
+**Checkpoint:** ``broad_epoch=1-step=5280.ckpt``
 
 .. code-block:: bash
 
-    python train2_n10.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts/processed_n10 \
-      --gpus 0 1 2 \
-      --num_epochs 3
+   python -m cxt.train \
+       --model broad \
+       --dataset-path /path/to/processed \
+       --gpus 0 1 2 \
+       --epochs 2
 
-Broad_w200_missing_n10 (all-in-one)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This run trains the missingness-aware small-window / n10 setup, initializing
-from the ``broad+adapter`` checkpoint. Adjust ``--num_epochs`` depending on
-whether you want a short run or a longer schedule.
+3. ``residual``
+^^^^^^^^^^^^^^^
+
+Trained from scratch with residual (log-deviation-from-mean) targets.
+Same architecture as broad.
+
+**Checkpoint:** ``residual_epoch=1-step=5280.ckpt``
 
 .. code-block:: bash
 
-    # uses broad+adapter checkpoint
-    python train2_n10.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data_n10 \
-      --gpus 0 1 2 \
-      --num_epochs 2 \
-      --learning_rate 3e-5 \
-      --checkpoint_path /sietch_colab/data_share/cxt/models/broad+adapter/version_26/checkpoints/epoch=2-step=792.ckpt
+   python -m cxt.train \
+       --model residual \
+       --dataset-path /path/to/processed \
+       --gpus 0 1 2 \
+       --epochs 2
 
-    # longer schedule (same command, more epochs)
-    python train2_n10.py \
-      --dataset_path /sietch_colab/kkor/cxt/ts_large_pop/processed_small_window_missing_data_n10 \
-      --gpus 0 1 2 \
-      --num_epochs 10 \
-      --learning_rate 3e-5 \
-      --checkpoint_path /sietch_colab/data_share/cxt/models/broad+adapter/version_26/checkpoints/epoch=2-step=792.ckpt
 
----
+4. ``broad_w200``
+^^^^^^^^^^^^^^^^^
+
+Fine-tuned from the ``broad`` checkpoint on 200 bp window data. Uses a
+reduced learning rate.
+
+**Checkpoint:** ``broad_w200_epoch=1-step=944.ckpt``
+
+.. code-block:: bash
+
+   python -m cxt.train \
+       --model broad_w200 \
+       --dataset-path /path/to/processed_small_window \
+       --gpus 0 1 2 \
+       --epochs 2 \
+       --lr 3e-5 \
+       --checkpoint /path/to/broad_epoch=1-step=5280.ckpt
+
+
+5. ``w200_wmissing``
+^^^^^^^^^^^^^^^^^^^^
+
+Fine-tuned from the ``broad_w200`` checkpoint on data with encoded
+missingness. The ``w200_wmissing`` preset automatically sets
+``mask_singletons=False``.
+
+**Checkpoint:** ``w200_wmissing_epoch=1-step=944.ckpt``
+
+.. code-block:: bash
+
+   python -m cxt.train \
+       --model w200_wmissing \
+       --dataset-path /path/to/processed_small_window_missing_data \
+       --gpus 0 1 2 \
+       --epochs 2 \
+       --lr 3e-5 \
+       --checkpoint /path/to/broad_w200_epoch=1-step=944.ckpt
+
+
+6. ``broad+adapter``
+^^^^^^^^^^^^^^^^^^^^
+
+Lightweight adapter on top of a frozen ``broad`` backbone. Trained on
+10-sample data. The adapter learns to map from 10 input samples to the
+50-sample feature space expected by the backbone.
+
+**Checkpoint:** ``broad_adapter_epoch=2-step=792.ckpt``
+
+.. code-block:: bash
+
+   python -m cxt.train \
+       --model broad \
+       --adapter \
+       --adapter-samples 10 \
+       --dataset-path /path/to/processed_n10 \
+       --gpus 0 1 2 \
+       --epochs 3 \
+       --checkpoint /path/to/broad_epoch=1-step=5280.ckpt
+
+
+7. ``w200_wmissing_adapter``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Adapter on a frozen ``w200_wmissing`` backbone, trained on 10-sample
+missingness data.
+
+**Checkpoint:** ``w200_wmissing_adapter_epoch=9-step=480.ckpt``
+
+.. code-block:: bash
+
+   python -m cxt.train \
+       --model w200_wmissing \
+       --adapter \
+       --adapter-samples 10 \
+       --dataset-path /path/to/processed_small_window_missing_data_n10 \
+       --gpus 0 1 2 \
+       --epochs 10 \
+       --lr 3e-5 \
+       --checkpoint /path/to/w200_wmissing_epoch=1-step=944.ckpt
+
+
+End-to-end summary
+------------------
+
+For reference, here is the full pipeline from simulation to checkpoints:
+
+.. code-block:: text
+
+   ┌─────────────────────────────────────────────────────────────┐
+   │ 1. SIMULATE  (python -m cxt.simulate)                      │
+   │    → base_dataset, ssd, idd, llm/*, stdpopsim/*            │
+   │                                                             │
+   │ 2. PREPROCESS  (python -m cxt.preprocess)                  │
+   │    → processed           (w2000, 50 samples, 200 pairs)    │
+   │    → processed_n10       (w2000, 10 samples, 20 pairs)     │
+   │    → processed_small_window           (w200, 50 samples)   │
+   │    → processed_small_window_missing_data       (+ bitmask) │
+   │    → processed_small_window_missing_data_n10   (+ n10)     │
+   │                                                             │
+   │ 3. TRAIN  (python -m cxt.train)                            │
+   │    narrow           ← processed                            │
+   │    broad            ← processed                            │
+   │    residual         ← processed                            │
+   │    broad_w200       ← processed_small_window + broad ckpt  │
+   │    w200_wmissing    ← processed_sw_missing + broad_w200    │
+   │    broad+adapter    ← processed_n10 + broad ckpt           │
+   │    w200_wmissing_adapter ← processed_sw_missing_n10        │
+   │                           + w200_wmissing ckpt             │
+   └─────────────────────────────────────────────────────────────┘
+
+
+Training hyperparameters
+------------------------
+
+Default training hyperparameters (from :class:`cxt.config.TrainingConfig`):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 20
+
+   * - Parameter
+     - Default
+   * - Learning rate
+     - 3e-4
+   * - Min learning rate
+     - 3e-5
+   * - Warmup iterations
+     - 10
+   * - LR decay iterations
+     - 150,000
+   * - Batch size
+     - 128
+   * - Gradient accumulation
+     - 6
+   * - Weight decay
+     - 0.1
+   * - Optimizer betas
+     - (0.9, 0.95)
+   * - Precision
+     - bf16-mixed
+   * - Strategy
+     - DDP
+
 
 Practical notes
 ---------------
 
-- **Checkpoints:** training uses PyTorch Lightning checkpoints; the
-  ``--checkpoint_path`` argument performs warm-start initialization and is used
-  for fine-tuning regimes (e.g., ``broad_w200`` and missingness-aware variants).
+- **Checkpoints** are saved by PyTorch Lightning under ``lightning_logs/``
+  in the directory specified by ``--log-dir`` (or the current working
+  directory if not set). The ``--checkpoint`` argument performs warm-start
+  initialization for fine-tuning.
 
-- **Datasets:** each ``--dataset_path`` directory is expected to contain the
-  preprocessed windows/blocks produced by the dataset preprocessing pipeline.
-  Use consistent preprocessing settings (window size, masking rules) between
-  training and the intended downstream inference use-case.
+- **Checkpoint cache**: ``cxt.load_model()`` looks for pretrained
+  checkpoints in ``~/.cache/cxt/checkpoints/`` by default. Set the
+  ``CXT_CHECKPOINT_CACHE`` environment variable to redirect this (useful
+  for isolated reproduction runs that should not touch the global cache).
 
-- **Singleton masking:** for missingness-aware training, singleton masking
-  should be disabled to avoid confounding real missingness with artificially
-  dropped rare variants.
+- **Singleton masking** is controlled by the model preset.
+  ``w200_wmissing`` has ``mask_singletons=False`` automatically.
 
-- **Multi-GPU:** ``--gpus 0 1 2`` selects GPUs by index. Ensure that the CUDA
-  visible devices match the indices you pass, especially on shared machines.
+- **KV cache** is disabled during training and enabled automatically at
+  inference via :func:`cxt.load_model`.
+
+- **Multi-GPU** training uses DDP. ``--gpus 0 1 2`` selects GPUs by index.
+
+- **Adapter training** freezes the backbone and only updates the adapter
+  module plus selected layer-norm and last-N transformer blocks
+  (controlled by ``unfreeze_strategy="ln_lastN"``).

@@ -6,11 +6,12 @@ import tskit
 import multiprocessing as mp
 
 from cxt.utils import xor, xnor
+from cxt.sfs import calculate_window_sfs
 
-from cxt.utils import retrieve_site_positions, calculate_window_sfs_vectorized
+
 def ts2X_vectorized_bichan(ts, window_size=2000, step_size=2000,
                            pivot_A=0, pivot_B=1, sequence_length=1e6, offset=0):
-    site_positions = retrieve_site_positions(ts) - offset
+    site_positions = ts.tables.sites.position - offset
     gm = ts.genotype_matrix().T  # [samples, sites]
     step_size = window_size 
     # mask invariants / bad sites once
@@ -34,17 +35,17 @@ def ts2X_vectorized_bichan(ts, window_size=2000, step_size=2000,
 
     for i, m in enumerate(w_multipliers):
         ws = window_size * m
-        Xs[0, i] = calculate_window_sfs_vectorized(
-            site_positions=site_positions,
+        Xs[0, i] = calculate_window_sfs(
+            positions=site_positions,
             pivot_frequencies=w_xor,
             window_size=ws, step_size=step_size,
-            sequence_length=seq_len, num_samples=num_samples
+            sequence_length=seq_len, num_samples=num_samples,
         )
-        Xs[1, i] = calculate_window_sfs_vectorized(
-            site_positions=site_positions,
+        Xs[1, i] = calculate_window_sfs(
+            positions=site_positions,
             pivot_frequencies=w_xnor,
             window_size=ws, step_size=step_size,
-            sequence_length=seq_len, num_samples=num_samples
+            sequence_length=seq_len, num_samples=num_samples,
         )
 
     return Xs  # cast to float16 later if needed
@@ -173,9 +174,14 @@ def interpolate_tmrcas(
     lefts, rights, tmrcas = [], [], []
     for tree in ts.trees():
         left, right = tree.interval
-        # TMRCA for the specified pair
         m = tree.mrca(sample_a, sample_b)
-        tmrca = tree.time(m)
+        if m == tskit.NULL:
+            tmrca = np.nan
+        else:
+            try:
+                tmrca = tree.time(m)
+            except (ValueError, IndexError):
+                tmrca = np.nan
         lefts.append(left)
         rights.append(right)
         tmrcas.append(tmrca)
@@ -195,8 +201,13 @@ def interpolate_tmrcas(
 # ---- simple deterministic helpers ----
 def find_ts_files(root: pathlib.Path) -> List[pathlib.Path]:
     exts = {".trees", ".ts", ".tsk", ".tskit"}
-    out = [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in exts]
-    out.sort(key=lambda p: str(p.relative_to(root)))  # stable order
+    out = []
+    for dirpath, _dirnames, filenames in os.walk(root, followlinks=True):
+        for fn in filenames:
+            p = pathlib.Path(dirpath) / fn
+            if p.suffix.lower() in exts:
+                out.append(p)
+    out.sort(key=lambda p: str(p.relative_to(root)))
     return out
 
 #def deterministic_split(files: List[pathlib.Path], train_ratio=0.9, seed=12345):
@@ -469,6 +480,7 @@ def main():
     #train_membership = deterministic_split(files, args.train_ratio, seed=args.global_seed)
     train_membership = deterministic_split_grouped(files, base, args.train_ratio, seed=args.global_seed)
 
+    unaccessible_bitmask = None
     if args.bitmask is not None:
         bitmask = np.load(args.bitmask)['access_2L']
         unaccessible_bitmask = ~bitmask

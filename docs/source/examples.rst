@@ -1,173 +1,259 @@
-Window-wise Decoding with cxt
-=============================
+Examples
+========
 
-This example demonstrates how :math:`\mathbf{cxt}` is used to decode
-pairwise time-to-most-recent-common-ancestor (TMRCA) trajectories from
-tree sequences using the high-level :func:`cxt.api2.translate` interface.
+This page demonstrates the core cxt inference workflow: loading models,
+decoding pairwise TMRCA trajectories from tree sequences, and using
+adapter modules for sample-size transfer.
 
-The pipeline is:
 
-1. Load pretrained :math:`\mathbf{cxt}` model variants.
-2. Simulate a recombining tree sequence using :mod:`msprime`.
-3. Decode TMRCA trajectories on fixed genomic blocks for selected pivot pairs.
-4. (Optional) Apply lightweight adapters to transfer models across sample sizes.
+Loading pretrained models
+-------------------------
 
----
-
-Model loading
--------------
-
-:cxt: ships with multiple pretrained model variants that differ in window size,
-architectural bias, and robustness to missing data. Models are loaded via
-:func:`cxt.utils.setup_cxt_model`, which automatically resolves cached
-checkpoints.
+cxt ships with seven pretrained model variants. All are loaded via
+:func:`cxt.load_model`, which downloads and caches checkpoints automatically.
 
 .. code-block:: python
 
-    from cxt.utils import setup_cxt_model
+   import cxt
 
-    model_types = [
-        "broad",
-        "broad+adapter",
-        "narrow",
-        "broad_w200",
-        "residual",
-        "w200_wmissing",
-        "w200_wmissing_adapter",
-    ]
+   model_types = [
+       "broad",            # main model (10 layers, w2000)
+       "narrow",           # smaller model (6 layers, w2000)
+       "broad_w200",       # 200 bp windows for large-Ne species
+       "residual",         # log-residual targets
+       "w200_wmissing",    # 200 bp windows with missingness
+       "broad+adapter",    # 10-sample adapter on broad
+       "w200_wmissing_adapter",  # 10-sample adapter with missingness
+   ]
 
-    models = {}
-    for model_type in model_types:
-        print(f"Loading {model_type}...")
-        models[model_type] = setup_cxt_model(model_type=model_type)
-        print(f"{model_type} loaded successfully!\n")
+   for mt in model_types:
+       model = cxt.load_model(mt, device="cpu")
+       n_params = sum(p.numel() for p in model.parameters())
+       print(f"{mt:30s}  {n_params:>12,} parameters")
 
-Typical output:
+Checkpoints are cached in ``~/.cache/cxt/checkpoints/`` and reused on
+subsequent calls.
 
-.. code-block:: text
 
-    Loading broad...
-    Using cached checkpoint: ~/.cache/cxt/checkpoints/broad/broad_epoch=1-step=5280.ckpt
-    broad loaded successfully!
+Simulating a tree sequence
+--------------------------
 
-    Loading broad+adapter...
-    Using cached checkpoint: ~/.cache/cxt/checkpoints/broad+adapter/broad_adapter_epoch=2-step=792.ckpt
-    broad+adapter loaded successfully!
-
-Cached checkpoints are reused automatically if available.
-
----
-
-Simulating input data
----------------------
-
-For demonstration purposes, we simulate a recombining tree sequence with
-:mod:`msprime`.
+For demonstration, we simulate a 1 Mb recombining tree sequence with
+``msprime``:
 
 .. code-block:: python
 
-    import msprime
+   import msprime
 
-    ts = msprime.sim_ancestry(
-        25,
-        recombination_rate=1e-8,
-        sequence_length=1e6,
-        population_size=2e4,
-        random_seed=42,
-    )
+   ts = msprime.sim_ancestry(
+       25,
+       recombination_rate=1e-8,
+       sequence_length=1e6,
+       population_size=2e4,
+       random_seed=42,
+   )
+   ts = msprime.mutate(ts, rate=1.29e-8, random_seed=42)
 
-    ts = msprime.mutate(
-        ts,
-        rate=1.29e-8,
-        random_seed=42,
-    )
+:func:`cxt.translate` also accepts VCF files and ``(genotype_matrix,
+positions)`` tuples.
 
-The :func:`translate` API also accepts empirical tree sequences,
-genotype matrices, or VCF-backed datasets.
-
----
 
 Decoding pairwise TMRCA
------------------------
+------------------------
 
-The central inference step is performed using :func:`cxt.api2.translate`.
-Here we decode the TMRCA trajectory for a single pivot pair across a
-1 Mb genomic block.
+The central inference step uses :func:`cxt.translate`. Here we decode the
+TMRCA trajectory for selected pivot pairs across a 1 Mb genomic block:
 
 .. code-block:: python
 
-    from cxt.api2 import translate
+   model = cxt.load_model("broad", device="cuda")
 
-    blocks = [(0, 1e6)]
-    pivot_pairs = [(0, 1)]
-    devices = ["cuda:0"]
-    B = 128
+   blocks = [(0, 1_000_000)]
+   pivot_pairs = [(0, 1), (2, 3), (4, 5)]
+   devices = ["cuda:0"]
 
-    yhat_tmrca, index_map = translate(
-        input_data=ts,
-        data_type="ts",
-        model=models["broad"],
-        pivot_pairs=pivot_pairs,
-        blocks=blocks,
-        devices=devices,
-        B_per_device=B,
-        B=B,
-        build_workers=8,
-        mutation_rate=1.29e-8,
-    )
+   tmrca, index_map = cxt.translate(
+       ts, model,
+       pivot_pairs=pivot_pairs,
+       blocks=blocks,
+       devices=devices,
+       B=128,
+       n_reps=15,
+       build_workers=8,
+       mutation_rate=1.29e-8,
+   )
 
-**Outputs**
+**Outputs:**
 
-- ``yhat_tmrca``  
-  Predicted log-TMRCA values indexed by pivot pair and genomic window.
+- ``tmrca``: log-TMRCA predictions, shape ``(n_items, n_reps, n_windows)``
+  when ``n_reps > 1``, or ``(n_items, n_windows)`` otherwise.
+- ``index_map``: array of shape ``(n_items, 2)`` mapping each row to
+  ``[block_idx, pivot_idx]``.
 
-- ``index_map``  
-  Mapping from model-internal indices to genomic coordinates and pivot pairs.
+Key parameters:
 
-Decoding scales linearly with the number of windows and is highly parallelizable
-across GPUs.
+- ``B``: batch size per device during generation.
+- ``n_reps``: number of stochastic replicates (default 15). More replicates
+  give smoother estimates; the mean across replicates is typically used.
+- ``build_workers``: parallel workers for SFS source construction.
+- ``mutation_rate``: if provided, applies a per-block stochastic diversity
+  bias correction.
 
----
 
-Sample-size transfer using adapters
+Multi-GPU inference
+-------------------
+
+Passing multiple devices automatically shards the workload:
+
+.. code-block:: python
+
+   tmrca, index_map = cxt.translate(
+       ts, model,
+       pivot_pairs=pivot_pairs,
+       blocks=blocks,
+       devices=["cuda:0", "cuda:1", "cuda:2"],
+       B_per_device=256,
+       build_workers=32,
+       mutation_rate=1.29e-8,
+   )
+
+
+Sample-size transfer with adapters
 -----------------------------------
 
-Some models include lightweight **adapter modules** that enable inference on
-sample sizes different from those seen during training.
-
-In the example below, we simplify the tree sequence to 10 samples and apply
-a pretrained backbone together with its adapter.
+Adapter models enable inference on sample sizes different from those seen
+during training. The ``broad+adapter`` model maps 10-sample input to the
+50-sample feature space expected by the frozen backbone.
 
 .. code-block:: python
 
-    ts_n10 = ts.simplify(samples=range(10))
+   adapter_model = cxt.load_model("broad+adapter", device="cuda")
 
-    yhat_tmrca, index_map = translate(
-        input_data=ts_n10,
-        data_type="ts",
-        model=models["broad+adapter"].backbone,
-        pivot_pairs=pivot_pairs,
-        blocks=blocks,
-        devices=devices,
-        B_per_device=B,
-        B=B,
-        build_workers=8,
-        mutation_rate=1.29e-8,
-        adapter=models["broad+adapter"].adapter,
-    )
+   ts_n10 = ts.simplify(samples=range(10))
 
-This allows **sample-size–robust decoding** without retraining the full model.
+   tmrca, index_map = cxt.translate(
+       ts_n10,
+       adapter_model.backbone,
+       pivot_pairs=[(0, 1), (2, 3)],
+       blocks=[(0, 1_000_000)],
+       devices=["cuda:0"],
+       B=128,
+       build_workers=8,
+       mutation_rate=1.29e-8,
+       adapter=adapter_model.adapter,
+   )
 
----
+.. figure:: figures/cxt_broad_adapter_constant.png
+   :align: center
+   :width: 60%
 
-Summary
--------
+   **Sample-size adapter.** TMRCA inference using the broad+adapter model
+   on 10 haploid samples. The adapter learns to project 10-sample SFS
+   features into the 50-sample space of the frozen backbone.
 
-This example illustrates the minimal workflow for decoding pairwise coalescence
-times with :math:`\mathbf{cxt}`:
 
-- Pretrained models are loaded via :func:`setup_cxt_model`
-- Tree sequences are decoded window-wise using :func:`translate`
-- Adapter modules enable flexible transfer across sample sizes
-- The same interface applies to simulated and empirical data, as well as genotype matrices and VCFs.
+Window resolution variants
+---------------------------
 
+The ``broad_w200`` and ``w200_wmissing`` variants use 200 bp windows instead
+of the default 2,000 bp, providing finer-scale resolution at the cost of a
+smaller effective genomic range per block. These models are especially useful
+for species with large effective population sizes where SFS density per
+window is higher.
+
+.. code-block:: python
+
+   model_w200 = cxt.load_model("broad_w200", device="cuda")
+
+   tmrca, index_map = cxt.translate(
+       ts, model_w200,
+       pivot_pairs=[(0, 1)],
+       blocks=[(0, 100_000)],
+       devices=["cuda:0"],
+   )
+
+.. figure:: figures/cxt_w200.png
+   :align: center
+   :width: 60%
+
+   **200 bp window resolution.** TMRCA scatter plot at 200 bp window
+   resolution, providing finer genomic detail.
+
+.. figure:: figures/cxt_w2000.png
+   :align: center
+   :width: 60%
+
+   **2,000 bp window resolution.** The default window size used by the
+   broad and narrow models.
+
+.. figure:: figures/cxt_w2000_residual.png
+   :align: center
+   :width: 60%
+
+   **Residual model.** TMRCA inference using the residual variant, which
+   predicts log-deviations from the population mean.
+
+
+Missingness-aware inference
+---------------------------
+
+For empirical data with missing sites (e.g. inaccessible regions in the
+Ag1000G), the ``w200_wmissing`` model encodes per-window missingness
+directly into the source tensor:
+
+.. code-block:: python
+
+   import numpy as np
+
+   model_wmissing = cxt.load_model("w200_wmissing", device="cuda")
+
+   unaccessible_bitmask = np.load("accessibility.npz")["access_2L"]
+   unaccessible_bitmask = ~unaccessible_bitmask
+
+   tmrca, index_map = cxt.translate(
+       ts, model_wmissing,
+       pivot_pairs=[(0, 1)],
+       blocks=[(0, 100_000)],
+       devices=["cuda:0"],
+       missingness_bitmask=unaccessible_bitmask,
+       mutation_rate=3.5e-9,
+   )
+
+
+VCF input
+---------
+
+cxt can infer TMRCAs directly from VCF files:
+
+.. code-block:: python
+
+   tmrca, index_map = cxt.translate(
+       "path/to/genotypes.vcf",
+       model,
+       blocks=[(0, 1_000_000)],
+       pivot_pairs=[(0, 1)],
+       devices=["cuda:0"],
+   )
+
+The VCF is parsed into a genotype matrix and positions internally using
+:func:`cxt.translate.vcf_parser`.
+
+
+Genotype matrix input
+---------------------
+
+For pre-processed data, pass a ``(genotype_matrix, positions)`` tuple:
+
+.. code-block:: python
+
+   import numpy as np
+
+   gm = np.load("genotypes.npy")     # (n_haplotypes, n_sites), int
+   pos = np.load("positions.npy")    # (n_sites,), float, in bp
+
+   tmrca, index_map = cxt.translate(
+       (gm, pos), model,
+       blocks=[(0, 1_000_000)],
+       pivot_pairs=[(0, 1), (2, 3)],
+       devices=["cuda:0"],
+   )

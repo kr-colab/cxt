@@ -135,7 +135,8 @@ def simulate_random_segment(
                 )
             except ValueError:           # "All intervals are missing data"
                 continue                 # try another window
-            if np.isfinite(contig.recombination_map.rate).all():
+            interior = contig.recombination_map.rate[1:-1]
+            if len(interior) == 0 or np.isfinite(interior).all():
                 break
 
     ts = engine.simulate(demography, contig, samples, seed=seed).trim()

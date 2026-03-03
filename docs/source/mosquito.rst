@@ -1,720 +1,254 @@
-Mosquito 2L inversion and RDL sweep
-===================================
+Mosquito: 2L Inversion and RDL Sweep
+=====================================
 
-This example shows how :math:`\mathbf{cxt}` is applied to real *Anopheles gambiae*
-data on chromosome 2L to produce the mosquito figures in the paper:
+This example applies cxt to *Anopheles gambiae* (Ag1000G) data on chromosome
+2L to visualize coalescent-time patterns across the 2La inversion and the
+RDL insecticide-resistance locus.
 
-* Genome-wide TMRCA patterns across the 2La inversion for multiple populations.
-* A zoomed-in view of the RDL insecticide-resistance region with missingness tracks.
 
-The pipeline is:
+.. figure:: figures/figure7_mosquito_rdl.png
+   :align: center
+   :width: 70%
 
-1. Load and subset Ag1000G 2L tree sequences per population and inversion genotype.
-2. Load the accessibility bitmask and derive a missingness track.
-3. Run :func:`cxt.api2.translate` with a missingness-aware model variant.
-4. Aggregate TMRCAs per genome and per population.
-5. Plot genome-wide 2L inversion TMRCA panels.
-6. Plot a focused RDL-region panel with aligned RDL coordinates and missingness.
+   **Figure 7.** RDL sweep region (25.1--25.6 Mb on chr2L) across five
+   African *A. gambiae* populations. Each panel shows individual replicate
+   traces (light blue), mean :math:`\pm` SD band, and the RDL gene
+   highlighted in red. The bottom track shows the Ag1000G accessibility
+   (missingness) pattern. Note the sharp TMRCA reduction at the RDL locus,
+   consistent with a selective sweep on insecticide resistance.
 
-Paths, imports, and cache
--------------------------
 
-.. code-block:: python
+.. figure:: figures/figure8_inversion.png
+   :align: center
+   :width: 100%
 
-    import os
-    import json
+   **Figure 8.** Coalescent-time structure across the In(2L)a inversion.
+   **Top:** Bar chart comparing mean TMRCA in four genomic regions -- outside
+   the inversion (10--20 Mb), the core interval, inner proximal (+1.0 Mb),
+   and inner distal (-1.0 Mb) -- for each population and across all
+   populations combined. **Bottom:** Genome-wide 2L TMRCA profiles with the
+   inversion interval highlighted in blue.
 
-    import tszip
-    import tskit
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import FuncFormatter
-    from tqdm import tqdm
 
-    import stdpopsim
-    import torch
+Pipeline overview
+-----------------
 
-    from cxt.api2 import translate
-    from cxt.utils import setup_cxt_model
-    from cxt.preprocess import interpolate_tmrcas
+1. Load and subset Ag1000G 2L tree sequences per population and inversion
+   genotype (2La heterozygotes).
+2. Load the accessibility bitmask and derive missingness tracks.
+3. Run :func:`cxt.translate` with the missingness-aware model variant
+   (``w200_wmissing``).
+4. For Ghana (fewer available individuals), use the
+   ``w200_wmissing_adapter`` model with 10-sample input.
+5. Aggregate TMRCAs per genome and per population.
+6. Plot the RDL zoom panel and the genome-wide inversion panel.
 
-    cache_dir = "./cache"
-    os.makedirs(cache_dir, exist_ok=True)
 
-    # Ag1000G 2L dated tree sequence
-    data_path = (
-        "/sietch_colab/data_share/Ag1000G/Ag3.0/args_trees/"
-        "tsinfer_data_v2/gamb.2L.gff.dated.ne.trees"
-    )
-
-    # Accessibility bitmask (Singer / Ag3)
-    accessible_path = (
-        "/sietch_colab/data_share/Ag1000G/Ag3.0/args_trees/singer/"
-        "agp3.is_accessible.txt.npz"
-    )
-
-Loading and subsetting tree sequences per population
-----------------------------------------------------
-
-We subset the full 2L tree sequence to heterozygous 2La individuals from each
-population and cache one tree sequence per population:
+Model and data setup
+--------------------
 
 .. code-block:: python
 
-    def load_population_ts(pop_name, n=25):
-        """
-        Load and simplify the 2L tree sequence to `n` heterozygous 2La
-        individuals from the specified country, caching to disk.
-        """
-        ts_path = os.path.join(cache_dir, f"ts_{pop_name.lower().replace(' ', '_')}.trees")
-        if ts_path in [os.path.join(cache_dir, f) for f in os.listdir(cache_dir)]:
-            return tskit.load(ts_path)
+   import os
+   import json
+   import numpy as np
+   import torch
+   import tskit
+   import cxt
 
-        ts = tszip.load(data_path)
-        ids = []
-        for ind in ts.individuals():
-            meta = json.loads(ind.metadata.decode("ascii"))
-            country = meta["country"]
-            inv_geno = int(meta["2La"])
-            if country == pop_name and inv_geno == 1:
-                ids.append(ind.nodes)
+   cache_dir = "./cache"
+   os.makedirs(cache_dir, exist_ok=True)
 
-        ts_pop = ts.simplify(samples=np.concatenate(ids[:n]))
-        ts_pop.dump(ts_path)
-        return ts_pop
+   data_path = "/path/to/Ag1000G/gamb.2L.gff.dated.ne.trees"
+   accessible_path = "/path/to/Ag1000G/agp3.is_accessible.txt.npz"
 
-    # Example populations used in the figure
-    ts_burkina_faso = load_population_ts("Burkina Faso", n=25)
-    ts_cameroon     = load_population_ts("Cameroon",     n=25)
-    ts_mali         = load_population_ts("Mali",         n=25)
-    ts_uganda       = load_population_ts("Uganda",       n=25)
+   devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
 
-Loading the accessibility mask and missingness bitmask
-------------------------------------------------------
+   model = cxt.load_model("w200_wmissing", device="cpu")
+   adapter_model = cxt.load_model("w200_wmissing_adapter", device="cpu")
 
-The Ag1000G “accessibility” bitmask is used to provide a missingness track that
-is passed to :func:`translate` and later plotted beneath the TMRCA panels:
 
-.. code-block:: python
-
-    bitmask = np.load(accessible_path)["access_2L"]   # True = accessible
-    unaccessible_bitmask = ~bitmask                   # True = missing
-
-Setting up the cxt model and pivots
+Loading and subsetting populations
 -----------------------------------
 
-For the mosquito analysis we use a missingness-aware model variant
-(``w200_wmissing``) and treat each individual as a pivot pair defined by its
-two nodes in the tree sequence:
+We subset the full 2L tree sequence to 2La heterozygous individuals from
+each population:
 
 .. code-block:: python
 
-    # Missingness-aware model for mosquitoes
-    model = setup_cxt_model(model_type="w200_wmissing")
+   POPULATIONS = {
+       "BurkinaFaso": "Burkina Faso",
+       "Mali": "Mali",
+       "Cameroon": "Cameroon",
+       "Ghana": "Ghana",
+       "Uganda": "Uganda",
+   }
 
-    # Use the same pivot construction across populations
-    pivot_pairs = [tuple(ind.nodes) for ind in ts_burkina_faso.individuals()]
+   def load_population_ts(full_ts, country_name, n_individuals=25):
+       ts_path = os.path.join(
+           cache_dir, f"ts_{country_name.lower().replace(' ', '_')}.trees"
+       )
+       if os.path.exists(ts_path):
+           return tskit.load(ts_path)
 
-    # Default mutation rate for Ag3 mosquitoes
-    mutation_rate = 3.5e-9
+       ids = []
+       for ind in full_ts.individuals():
+           meta = json.loads(ind.metadata.decode("ascii"))
+           if meta["country"] == country_name and int(meta["2La"]) == 1:
+               ids.append(ind.nodes)
 
-    # GPU configuration
-    devices = ["cuda:0", "cuda:1", "cuda:2"]
+       ts_pop = full_ts.simplify(samples=np.concatenate(ids[:n_individuals]))
+       ts_pop.dump(ts_path)
+       return ts_pop
 
-Genome-wide blocks along 2L
+
+Accessibility mask
+------------------
+
+.. code-block:: python
+
+   bitmask = np.load(accessible_path)["access_2L"]
+   unaccessible_bitmask = ~bitmask
+
+
+Running cxt with missingness
+-----------------------------
+
+Genome-wide 2L is tiled into 490 blocks of 100 kb each:
+
+.. code-block:: python
+
+   N_BLOCKS = 490
+   BLOCK_SIZE = 0.1e6
+   MUTATION_RATE = 3.5e-9
+
+   blocks = [(int(i * BLOCK_SIZE), int((i + 1) * BLOCK_SIZE))
+             for i in range(N_BLOCKS)]
+
+   full_ts = tskit.load(data_path)
+
+   # Standard populations (25 individuals each)
+   for pop_key, country_name in POPULATIONS.items():
+       if pop_key == "Ghana":
+           continue
+
+       ts_pop = load_population_ts(full_ts, country_name)
+       pivot_pairs = [tuple(ind.nodes) for ind in ts_pop.individuals()]
+
+       tmrca, index_map = cxt.translate(
+           ts_pop, model,
+           pivot_pairs=pivot_pairs,
+           blocks=blocks,
+           missingness_bitmask=unaccessible_bitmask,
+           devices=devices,
+           B_per_device=512, B=512,
+           build_workers=36,
+           mutation_rate=MUTATION_RATE,
+       )
+       np.savez_compressed(
+           os.path.join(cache_dir, f"tmrca_{pop_key.lower()}_wmissing_2L.npz"),
+           tmrca=tmrca, index_map=index_map,
+       )
+
+
+Ghana with adapter
+------------------
+
+Ghana uses the adapter model variant, downsampled to 10 haploid samples:
+
+.. code-block:: python
+
+   ts_ghana = load_population_ts(full_ts, "Ghana")
+   ts_ghana = ts_ghana.simplify(samples=np.arange(0, 10))
+   pivot_pairs_ghana = [tuple(ind.nodes) for ind in ts_ghana.individuals()]
+
+   tmrca_ghana, index_map_ghana = cxt.translate(
+       ts_ghana,
+       adapter_model.backbone,
+       pivot_pairs=pivot_pairs_ghana,
+       blocks=blocks,
+       missingness_bitmask=unaccessible_bitmask,
+       devices=devices,
+       B_per_device=512, B=512,
+       build_workers=36,
+       mutation_rate=MUTATION_RATE,
+       adapter=adapter_model.adapter,
+   )
+
+
+Assembling genome-wide TMRCA
+-----------------------------
+
+.. code-block:: python
+
+   def make_genome(tmrca, index_map, pivot_pairs):
+       genomes = []
+       for i in range(len(pivot_pairs)):
+           mask = index_map[:, 1] == i
+           if tmrca.ndim == 3:
+               pair_data = tmrca[:, mask].mean(axis=0)
+           else:
+               pair_data = tmrca[mask]
+           genomes.append(pair_data.flatten())
+       return np.exp(np.array(genomes))
+
+
+RDL region
+----------
+
+The RDL insecticide-resistance gene spans 25.36--25.43 Mb on chr2L. The
+zoom window covers 25.1--25.6 Mb, showing the sharp TMRCA reduction
+characteristic of a selective sweep at the *Rdl* locus (resistance to
+dieldrin).
+
+The RDL signal is visible across all five populations, with Mali and
+Burkina Faso showing the strongest sweep signatures, consistent with
+intense insecticide pressure in West Africa.
+
+
+2La inversion structure
+-----------------------
+
+The In(2L)a inversion (approximately 20.5--42.2 Mb) creates distinct
+coalescent-time patterns:
+
+- **Core interval**: elevated TMRCA within the inversion, reflecting
+  reduced gene flow between karyotypes.
+- **Breakpoint regions**: sharp TMRCA transitions at the proximal and
+  distal inversion boundaries.
+- **Outside**: baseline TMRCA levels in the flanking regions.
+
+.. figure:: figures/figS9_mosquito_comparison.png
+   :align: center
+   :width: 100%
+
+   **Supplementary Figure S9.** Population-level comparison of TMRCA
+   patterns across the full 2L chromosome arm.
+
+
+Cross-coalescence patterns
 ---------------------------
 
-For the genome-wide inversion panel we tile almost the entire 2L arm in 100 kb
-blocks:
+.. figure:: figures/figS10_cross_coalescence.png
+   :align: center
+   :width: 100%
 
-.. code-block:: python
+   **Supplementary Figure S10.** Cross-coalescence patterns between
+   populations, revealing shared and divergent demographic histories.
 
-    blocks = [(i * 0.1e6, (i + 1) * 0.1e6) for i in range(490)]
 
-Running cxt for Burkina Faso
-----------------------------
+Reproducing the figures
+-----------------------
 
-We first run :func:`translate` on Burkina Faso with missingness, caching the
-results:
+The complete figure scripts with all plotting details are available at:
 
-.. code-block:: python
+- ``figures/main/fig7_mosquito_rdl.py`` -- RDL zoom panel (Figure 7)
+- ``figures/main/fig8_inversion_coalescence.py`` -- Inversion bar chart
+  and genome-wide panels (Figure 8)
 
-    if "tmrca_burkina_faso_wmissing_2L.npz" in os.listdir(cache_dir):
-        data = np.load(os.path.join(cache_dir, "tmrca_burkina_faso_wmissing_2L.npz"))
-        tmrca_burkina_faso = data["tmrca"]
-        index_map = data["index_map"]
-    else:
-        tmrca_burkina_faso, index_map = translate(
-            input_data=ts_burkina_faso,
-            data_type="ts",
-            model=model,
-            pivot_pairs=pivot_pairs,
-            blocks=blocks,
-            missingness_bitmask=unaccessible_bitmask,
-            devices=devices,
-            B_per_device=512,
-            build_workers=36,
-            mutation_rate=mutation_rate,
-        )
-        np.savez_compressed(
-            os.path.join(cache_dir, "tmrca_burkina_faso_wmissing_2L.npz"),
-            tmrca=tmrca_burkina_faso,
-            index_map=index_map,
-        )
+Run them via:
 
-Running cxt for Cameroon
-------------------------
+.. code-block:: bash
 
-For Cameroon we compute both a focused RDL-region run and a full 2L run. The
-figure uses the full 2L run; the RDL run is useful for local consistency checks.
-
-.. code-block:: python
-
-    ts_cameroon = load_population_ts("Cameroon", n=25)
-    devices = ["cuda:1", "cuda:2"]
-
-    # Focused RDL-region blocks (optional)
-    rdl_blocks = [
-        (25_200_000, 25_300_000),
-        (25_300_000, 25_400_000),
-        (25_400_000, 25_500_000),
-    ]
-
-    if "tmrca_cameroon_wmissing_2L_rdl.npz" in os.listdir(cache_dir):
-        data = np.load(os.path.join(cache_dir, "tmrca_cameroon_wmissing_2L_rdl.npz"))
-        tmrca_cameroon_rdl = data["tmrca"]
-        index_map_rdl = data["index_map"]
-    else:
-        tmrca_cameroon_rdl, index_map_rdl = translate(
-            input_data=ts_cameroon,
-            data_type="ts",
-            model=model,
-            pivot_pairs=pivot_pairs,
-            blocks=rdl_blocks,
-            missingness_bitmask=unaccessible_bitmask,
-            devices=devices,
-            B_per_device=512,
-            build_workers=36,
-            mutation_rate=mutation_rate,
-        )
-        np.savez_compressed(
-            os.path.join(cache_dir, "tmrca_cameroon_wmissing_2L_rdl.npz"),
-            tmrca=tmrca_cameroon_rdl,
-            index_map=index_map_rdl,
-        )
-
-    # Full 2L run for Cameroon (used for genome-wide inversion panel)
-    blocks = [(i * 0.1e6, (i + 1) * 0.1e6) for i in range(490)]
-
-    if "tmrca_cameroon_wmissing_2L.npz" in os.listdir(cache_dir):
-        data = np.load(os.path.join(cache_dir, "tmrca_cameroon_wmissing_2L.npz"))
-        tmrca_cameroon = data["tmrca"]
-        index_map = data["index_map"]
-    else:
-        tmrca_cameroon, index_map = translate(
-            input_data=ts_cameroon,
-            data_type="ts",
-            model=model,
-            pivot_pairs=pivot_pairs,
-            blocks=blocks,
-            missingness_bitmask=unaccessible_bitmask,
-            devices=devices,
-            B_per_device=512,
-            build_workers=36,
-            mutation_rate=mutation_rate,
-        )
-        np.savez_compressed(
-            os.path.join(cache_dir, "tmrca_cameroon_wmissing_2L.npz"),
-            tmrca=tmrca_cameroon,
-            index_map=index_map,
-        )
-
-Running cxt for Mali and Uganda
--------------------------------
-
-We repeat the full 2L run for Mali and Uganda using the same ``blocks`` and
-``pivot_pairs``:
-
-.. code-block:: python
-
-    ts_mali = load_population_ts("Mali", n=25)
-
-    if "tmrca_mali_wmissing_2L.npz" in os.listdir(cache_dir):
-        data = np.load(os.path.join(cache_dir, "tmrca_mali_wmissing_2L.npz"))
-        tmrca_mali = data["tmrca"]
-        index_map = data["index_map"]
-    else:
-        tmrca_mali, index_map = translate(
-            input_data=ts_mali,
-            data_type="ts",
-            model=model,
-            pivot_pairs=pivot_pairs,
-            blocks=blocks,
-            missingness_bitmask=unaccessible_bitmask,
-            devices=devices,
-            B_per_device=512,
-            build_workers=36,
-            mutation_rate=mutation_rate,
-        )
-        np.savez_compressed(
-            os.path.join(cache_dir, "tmrca_mali_wmissing_2L.npz"),
-            tmrca=tmrca_mali,
-            index_map=index_map,
-        )
-
-    ts_uganda = load_population_ts("Uganda", n=25)
-
-    if "tmrca_uganda_wmissing_2L.npz" in os.listdir(cache_dir):
-        data = np.load(os.path.join(cache_dir, "tmrca_uganda_wmissing_2L.npz"))
-        tmrca_uganda = data["tmrca"]
-        index_map = data["index_map"]
-    else:
-        tmrca_uganda, index_map = translate(
-            input_data=ts_uganda,
-            data_type="ts",
-            model=model,
-            pivot_pairs=pivot_pairs,
-            blocks=blocks,
-            missingness_bitmask=unaccessible_bitmask,
-            devices=devices,
-            B_per_device=512,
-            build_workers=36,
-            mutation_rate=mutation_rate,
-        )
-        np.savez_compressed(
-            os.path.join(cache_dir, "tmrca_uganda_wmissing_2L.npz"),
-            tmrca=tmrca_uganda,
-            index_map=index_map,
-        )
-
-Aggregating TMRCAs into genome-wide windows
--------------------------------------------
-
-We aggregate per-country TMRCAs over blocks and pivot pairs into genome-wide
-2 kb windows and log-transform them. We use a helper that collapses replicate
-and pivot dimensions onto a `(replicates, windows)` array:
-
-.. code-block:: python
-
-    def make_tmrca_genome(tmrca_country, pivot_pairs, index_map):
-        tmrca_genomes = []
-        for i in range(len(pivot_pairs)):
-            mask = index_map[:, 1] == i
-            tmrca_genome = tmrca_country[:, mask, :].mean(0).flatten()
-            tmrca_genomes.append(tmrca_genome)
-        tmrca_genomes = np.array(tmrca_genomes)
-        return np.exp(tmrca_genomes)  # (replicates, windows) in generations
-
-    tmrca_uganda        = make_tmrca_genome(tmrca_uganda,        pivot_pairs, index_map)
-    tmrca_cameroon      = make_tmrca_genome(tmrca_cameroon,      pivot_pairs, index_map)
-    tmrca_mali          = make_tmrca_genome(tmrca_mali,          pivot_pairs, index_map)
-    tmrca_burkina_faso  = make_tmrca_genome(tmrca_burkina_faso,  pivot_pairs, index_map)
-
-    # Log-transform for plotting
-    tmrca_uganda        = np.log(tmrca_uganda)
-    tmrca_cameroon      = np.log(tmrca_cameroon)
-    tmrca_mali          = np.log(tmrca_mali)
-    tmrca_burkina_faso  = np.log(tmrca_burkina_faso)
-
-Loading Ghana with adapter model
---------------------------------
-
-Ghana is treated separately using a model with an adapter. We also downsample
-to 10 individuals and pass the adapter explicitly into :func:`translate`:
-
-.. code-block:: python
-
-    # Ghana tree sequence (heterozygous 2La)
-    if "ts_ghana.trees" not in os.listdir(cache_dir):
-        ts = tszip.load(data_path)
-        ids = []
-        for ind in ts.individuals():
-            meta = json.loads(ind.metadata.decode("ascii"))
-            country = meta["country"]
-            inv_geno = int(meta["2La"])
-            if country == "Ghana" and inv_geno == 1:
-                ids.append(ind.nodes)
-        ts_ghana = ts.simplify(samples=np.concatenate(ids[:25]))
-        ts_ghana.dump(os.path.join(cache_dir, "ts_ghana.trees"))
-    else:
-        ts_ghana = tskit.load(os.path.join(cache_dir, "ts_ghana.trees"))
-
-    # Ghana model: adapter variant, do not mask singletons
-    model_ghana = setup_cxt_model(model_type="w200_wmissing_adapter")
-    model_ghana.backbone.transformer.bt2ls.config.mask_singletons = False
-
-    # Downsample Ghana to 10 samples
-    ts_ghana = ts_ghana.simplify(samples=np.arange(0, 10))
-    pivot_pairs_ghana = [tuple(ind.nodes) for ind in ts_ghana.individuals()]
-
-    mutation_rate = 3.5e-9
-    devices = ["cuda:1"]
-
-    if "tmrca_ghana_wmissing.npz" in os.listdir(cache_dir):
-        data = np.load(os.path.join(cache_dir, "tmrca_ghana_wmissing.npz"))
-        tmrca_ghana = data["tmrca"]
-        index_map_ghana = data["index_map"]
-    else:
-        tmrca_ghana, index_map_ghana = translate(
-            input_data=ts_ghana,
-            data_type="ts",
-            model=model_ghana.backbone,
-            pivot_pairs=pivot_pairs_ghana,
-            blocks=blocks,
-            missingness_bitmask=unaccessible_bitmask,
-            devices=devices,
-            B_per_device=512,
-            build_workers=36,
-            mutation_rate=mutation_rate,
-            adapter=model_ghana.adapter,
-        )
-        np.savez_compressed(
-            os.path.join(cache_dir, "tmrca_ghana_wmissing.npz"),
-            tmrca=tmrca_ghana,
-            index_map=index_map_ghana,
-        )
-
-    tmrca_ghana = make_tmrca_genome(tmrca_ghana, pivot_pairs_ghana, index_map_ghana)
-    tmrca_ghana = np.log(tmrca_ghana)
-
-Genome-wide 2L inversion panel
-------------------------------
-
-We first produce a genome-wide 2L inversion panel (2 × 2 layout) with a shared
-missingness track at the bottom of each panel.
-
-Helper functions for missingness and panel plotting:
-
-.. code-block:: python
-
-    fmt_mb = FuncFormatter(lambda v, _: f"{v/1e6:.1f} Mb")
-
-    def moving_average(frac, smooth_bp=50_000, step_bp=2000):
-        k = max(1, int(round(smooth_bp / step_bp)))
-        kernel = np.ones(k, dtype=np.float32) / k
-        return np.convolve(frac.astype(np.float32), kernel, mode="same")
-
-    def missing_track_from_bitmask(unaccessible_bitmask, blocks, window_bp=200):
-        start, end = blocks[0][0], blocks[-1][1]
-        region = np.asarray(unaccessible_bitmask[start:end], dtype=np.bool_)
-        n_bins = int(np.ceil((end - start) / window_bp))
-        pad = n_bins * window_bp - region.size
-        if pad > 0:
-            region = np.pad(region, (0, pad), constant_values=False)
-        miss_frac = region.reshape(n_bins, window_bp).mean(axis=1).astype(np.float32)
-        return miss_frac
-
-    def _draw_missing_track(ax, x, missing_frac, smooth_bp=50_000, step_bp=200,
-                            height=0.16, pad=0.26, xlabel=None):
-        """Draw compact missingness track below main axis; x-label shown here (if provided)."""
-        y_raw = np.clip(missing_frac, 0, 1)
-        y_smooth = np.clip(moving_average(y_raw, smooth_bp, step_bp), 0, 1)
-
-        tr = ax.inset_axes([0.0, -pad, 1.0, height], transform=ax.transAxes)
-        tr.fill_between(x, 0, y_smooth, alpha=0.45, color="lightsteelblue", zorder=1)
-        tr.plot(x, y_smooth, lw=1.5, color="steelblue", alpha=0.95, zorder=2)
-
-        tr.set_xlim(x.min(), x.max())
-        tr.set_ylim(0, 1)
-        tr.xaxis.set_major_formatter(fmt_mb)
-        for s in ("top", "right", "left"):
-            tr.spines[s].set_visible(False)
-        tr.spines["bottom"].set_linewidth(0.5)
-        tr.spines["bottom"].set_alpha(0.5)
-        tr.set_yticks([])
-        tr.set_facecolor("none")
-        tr.grid(False)
-
-        if xlabel is None:
-            tr.tick_params(axis="x", which="both", labelbottom=False)
-        else:
-            tr.set_xlabel(xlabel, labelpad=10, fontsize=9)
-
-        for line in tr.lines:
-            line.set_clip_on(False)
-        for coll in tr.collections:
-            coll.set_clip_on(False)
-
-    def plot_panel(ax, tmrca_genome, title, missing_frac=None,
-                   smooth_bp=5_000, step_bp=200, xlabel=None):
-        mean_tmrca = tmrca_genome.mean(axis=0)
-        std_tmrca  = tmrca_genome.std(axis=0)
-        x = np.arange(tmrca_genome.shape[1]) * step_bp
-
-        # 2La inversion and RDL coordinates
-        inversion_start, inversion_end = 21e6, 43.4e6
-        rdl_start, rdl_end = 25_363_652, 25_434_556
-        inversion_mask = (x >= inversion_start) & (x <= inversion_end)
-
-        # TMRCA replicates
-        n = tmrca_genome.shape[0]
-        for i in range(n):
-            alpha = 0.30 + 0.40 * (i / n)
-            lw = 0.6 + 0.4 * (i % 5 == 0)
-            ax.plot(x, tmrca_genome[i], lw=lw, color="lightgray", alpha=alpha*0.8, zorder=0)
-            ax.plot(x[inversion_mask], tmrca_genome[i][inversion_mask],
-                    lw=lw, color="steelblue", alpha=alpha, zorder=0)
-
-        eps   = 1e-12
-        lower = np.clip(mean_tmrca - std_tmrca, eps, None)
-        upper = np.clip(mean_tmrca + std_tmrca, eps, None)
-
-        ax.fill_between(x, lower, upper, color="lightgray", alpha=0.2, zorder=1)
-        ax.plot(x, lower, ls="--", lw=0.8, color="silver", alpha=0.7, zorder=2)
-        ax.plot(x, upper, ls="--", lw=0.8, color="silver", alpha=0.7, zorder=2)
-        ax.plot(x, mean_tmrca, lw=1.0, color="darkgray", alpha=0.8, zorder=3)
-
-        ax.fill_between(x[inversion_mask], lower[inversion_mask], upper[inversion_mask],
-                        color="deepskyblue", alpha=0.35, zorder=1)
-        ax.plot(x[inversion_mask], lower[inversion_mask],
-                ls="--", lw=0.8, color="dodgerblue", alpha=0.9, zorder=2)
-        ax.plot(x[inversion_mask], upper[inversion_mask],
-                ls="--", lw=0.8, color="dodgerblue", alpha=0.9, zorder=2)
-        ax.plot(x[inversion_mask], mean_tmrca[inversion_mask],
-                lw=1.0, color="dodgerblue", zorder=3, label="2La inversion")
-
-        ax.set_yscale("log")
-        ax.set_xlim(x.min(), x.max())
-        ax.grid(True, alpha=0.3, which="both", linestyle="--")
-        ax.set_title(title, fontsize=11)
-        ax.xaxis.set_major_formatter(fmt_mb)
-        ax.set_ylim(1e4, 5e6)
-        ax.legend(fontsize=8, loc="best")
-        ax.tick_params(axis="x", which="both", labelbottom=False)
-
-        if missing_frac is not None:
-            _draw_missing_track(ax, x, missing_frac,
-                                smooth_bp=50_000, step_bp=step_bp, xlabel=xlabel)
-
-Compute missingness and plot the inversion panel:
-
-.. code-block:: python
-
-    blocks = [(int(i * 0.1e6), int((i + 1) * 0.1e6)) for i in range(490)]
-    missing_2L = missing_track_from_bitmask(unaccessible_bitmask, blocks, window_bp=200)
-
-    start = 0
-    end   = blocks[-1][1]
-    start_block = start // 200
-    end_block   = end // 200
-
-    datasets = [
-        ("Mali",         np.exp(tmrca_mali)[:, start_block:end_block],         missing_2L),
-        ("Burkina Faso", np.exp(tmrca_burkina_faso)[:, start_block:end_block], missing_2L),
-        ("Cameroon",     np.exp(tmrca_cameroon)[:, start_block:end_block],     missing_2L),
-        ("Uganda",       np.exp(tmrca_uganda)[:, start_block:end_block],       missing_2L),
-    ]
-
-    fig, axes = plt.subplots(2, 2, figsize=(10, 6), sharex=True, sharey=True)
-    for i, (ax, (name, genome, miss)) in enumerate(zip(axes.ravel(), datasets)):
-        xlabel = "Position on 2L (bp)" if i >= 2 else None
-        plot_panel(ax, genome, name, missing_frac=miss,
-                   smooth_bp=5_000, step_bp=200, xlabel=xlabel)
-
-    for ax in axes[:, 0]:
-        ax.set_ylabel("TMRCA (generations)")
-
-    plt.tight_layout()
-    plt.show()
-
-RDL zoom panel with aligned coordinates
----------------------------------------
-
-To focus on the RDL insecticide-resistance gene, we restrict to the region
-[25.1 Mb, 25.6 Mb] on 2L, align all populations to the same genomic coordinates,
-and overlay a missingness track only in the bottom panel.
-
-Helper functions and RDL settings:
-
-.. code-block:: python
-
-    REGION_START = 25_100_000
-    REGION_END   = 25_600_000
-    STEP_BP      = 200
-
-    rdl_start, rdl_end = 25_363_652, 25_434_556
-    fmt_mb = FuncFormatter(lambda v, _: f"{v/1e6:.1f} Mb")
-
-    def moving_average(frac, smooth_bp=5_000, step_bp=200):
-        k = max(1, int(round(smooth_bp / step_bp)))
-        kernel = np.ones(k, dtype=np.float32) / k
-        return np.convolve(frac.astype(np.float32), kernel, mode="same")
-
-    def missing_track_from_bitmask(unaccessible_bitmask, blocks, window_bp=200):
-        start, end = blocks[0][0], blocks[-1][1]
-        region = np.asarray(unaccessible_bitmask[start:end], dtype=np.bool_)
-        n_bins = int(np.ceil((end - start) / window_bp))
-        pad = n_bins * window_bp - region.size
-        if pad > 0:
-            region = np.pad(region, (0, pad), constant_values=False)
-        miss_frac = region.reshape(n_bins, window_bp).mean(axis=1).astype(np.float32)
-        return miss_frac
-
-    def _draw_missing_track(ax, x, missing_frac, smooth_bp=5_000, step_bp=200,
-                            height=0.16, pad=0.26, xlabel=None):
-        y_raw = np.clip(missing_frac, 0, 1)
-        y_smooth = np.clip(moving_average(y_raw, smooth_bp, step_bp), 0, 1)
-
-        tr = ax.inset_axes([0.0, -pad, 1.0, height], transform=ax.transAxes)
-        tr.fill_between(x, 0, y_smooth, alpha=0.35, color="lightsteelblue", zorder=1)
-        tr.plot(x, y_smooth, lw=1.1, color="steelblue", alpha=0.95, zorder=2)
-        tr.plot(x, y_raw,   lw=0.5, color="steelblue", alpha=0.30, zorder=2)
-
-        tr.set_xlim(x.min(), x.max())
-        tr.set_ylim(0, 1)
-        tr.xaxis.set_major_formatter(fmt_mb)
-        for s in ("top", "right", "left"):
-            tr.spines[s].set_visible(False)
-        tr.spines["bottom"].set_linewidth(0.5)
-        tr.spines["bottom"].set_alpha(0.5)
-        tr.set_yticks([])
-        tr.set_facecolor("none")
-        tr.grid(False)
-
-        if xlabel is None:
-            tr.tick_params(axis="x", which="both", labelbottom=False)
-        else:
-            tr.set_xlabel(xlabel, labelpad=10, fontsize=9)
-
-        for line in tr.lines:
-            line.set_clip_on(False)
-        for coll in tr.collections:
-            coll.set_clip_on(False)
-
-    def plot_panel(ax, tmrca_genome, title, base_x,
-                   missing_frac=None, smooth_bp=5_000, step_bp=200, xlabel=None):
-        """
-        tmrca_genome: (n_reps, n_bins) slice corresponding to [REGION_START, REGION_END]
-        base_x:       (n_bins,) array of bp coordinates (true genomic positions)
-        """
-        mean_tmrca = tmrca_genome.mean(axis=0)
-        std_tmrca  = tmrca_genome.std(axis=0)
-
-        n = tmrca_genome.shape[0]
-        for i in range(n):
-            alpha = 0.30 + 0.40 * (i / n)
-            lw    = 0.6 + 0.4 * (i % 5 == 0)
-            ax.plot(base_x, tmrca_genome[i], lw=lw,
-                    color="steelblue", alpha=alpha, zorder=0)
-
-        eps   = 1e-12
-        lower = np.clip(mean_tmrca - std_tmrca, eps, None)
-        upper = np.clip(mean_tmrca + std_tmrca, eps, None)
-
-        ax.fill_between(base_x, lower, upper,
-                        color="deepskyblue", alpha=0.35, zorder=1)
-        ax.plot(base_x, lower, ls="--", lw=0.8,
-                color="dodgerblue", alpha=0.9, zorder=2)
-        ax.plot(base_x, upper, ls="--", lw=0.8,
-                color="dodgerblue", alpha=0.9, zorder=2)
-        ax.plot(base_x, mean_tmrca, lw=1.0, color="dodgerblue", zorder=3)
-
-        # RDL shading + arrow
-        ax.axvspan(rdl_start, rdl_end, color="crimson", alpha=0.10, zorder=0)
-        mid = (rdl_start + rdl_end) / 2
-
-        ymin, ymax = np.nanmin(mean_tmrca), np.nanmax(mean_tmrca)
-        y_arrow = np.exp((np.log(ymin) + np.log(ymax)) / 3)
-
-        ax.annotate(
-            "",
-            xy=(rdl_end, y_arrow),
-            xytext=(rdl_start, y_arrow),
-            arrowprops=dict(arrowstyle="-|>", lw=1.2, color="black"),
-            zorder=6,
-        )
-        ax.text(
-            mid,
-            y_arrow * 1.05,
-            "RDL",
-            fontsize=9,
-            ha="center",
-            va="bottom",
-            zorder=6,
-        )
-
-        ax.set_yscale("log")
-        ax.set_xlim(REGION_START, REGION_END)
-        ax.set_ylim(0.5e2, 5e6)
-        ax.grid(True, alpha=0.3, which="both", linestyle="--")
-        ax.set_title(title, fontsize=11, loc="left")
-        ax.xaxis.set_major_formatter(fmt_mb)
-        ax.tick_params(axis="x", which="both", labelbottom=False)
-
-        if missing_frac is not None:
-            _draw_missing_track(
-                ax, base_x, missing_frac,
-                smooth_bp=smooth_bp,
-                step_bp=step_bp,
-                xlabel=xlabel,
-            )
-
-Build the region slice and plot the RDL zoom panel:
-
-.. code-block:: python
-
-    blocks_rdl = [
-        (25_100_000, 25_200_000),
-        (25_200_000, 25_300_000),
-        (25_300_000, 25_400_000),
-        (25_400_000, 25_500_000),
-        (25_500_000, 25_600_000),
-    ]
-    missing_2L_rdl = missing_track_from_bitmask(unaccessible_bitmask, blocks_rdl, window_bp=STEP_BP)
-
-    start_block = REGION_START // STEP_BP
-    n_bins_region = (REGION_END - REGION_START) // STEP_BP
-    base_x_region = np.arange(n_bins_region) * STEP_BP + REGION_START
-
-    datasets = [
-        ("Mali",         np.exp(tmrca_mali)),
-        ("Burkina Faso", np.exp(tmrca_burkina_faso)),
-        ("Cameroon",     np.exp(tmrca_cameroon)),
-        ("Ghana",        np.exp(tmrca_ghana)),
-        ("Uganda",       np.exp(tmrca_uganda)),
-    ]
-
-    n_rows = len(datasets)
-    fig, axes = plt.subplots(n_rows, 1, figsize=(6, 9), sharex=True, sharey=True)
-    if n_rows == 1:
-        axes = [axes]
-
-    for i, (ax, (name, genome_full)) in enumerate(zip(axes, datasets)):
-        pop_start_block = start_block
-        pop_end_block   = pop_start_block + n_bins_region
-
-        n_bins_chr = genome_full.shape[1]
-        if pop_end_block > n_bins_chr:
-            pop_end_block = n_bins_chr
-            pop_start_block = pop_end_block - n_bins_region
-
-        tmrca_slice = genome_full[:, pop_start_block:pop_end_block]
-
-        if i == n_rows - 1:
-            xlabel = "Position on 2L (Mb)"
-            miss   = missing_2L_rdl
-        else:
-            xlabel = None
-            miss   = None
-
-        plot_panel(
-            ax,
-            tmrca_slice,
-            name,
-            base_x=base_x_region,
-            missing_frac=miss,
-            smooth_bp=5_000,
-            step_bp=STEP_BP,
-            xlabel=xlabel,
-        )
-
-    for ax in axes:
-        ax.set_ylabel("TMRCA (generations)")
-
-    plt.tight_layout()
-    plt.show()
-
-With appropriate global figure layout and styling, these calls reproduce the
-mosquito inversion and RDL panels used in the manuscript, including the
-population-wise TMRCA patterns and the accessibility-driven missingness track
-in the bottom panel.
+   python figures/main/fig7_mosquito_rdl.py --output-dir figures/output/main
+   python figures/main/fig8_inversion_coalescence.py --output-dir figures/output/main
