@@ -9,19 +9,77 @@ exact commands that reproduce every checkpoint shipped with the package.
 Checkpoint dependency graph
 ---------------------------
 
-The seven released checkpoints form a dependency chain. Models lower in the
+The six released checkpoints form a dependency chain. Models lower in the
 graph are fine-tuned from checkpoints higher up:
 
 .. code-block:: text
 
-   narrow  (from scratch on "processed")
-   residual  (from scratch on "processed")
-
+   narrow  (from scratch on "processed_narrow" — constant only)
    broad  (from scratch on "processed")
      ├── broad+adapter  (adapter on "processed_n10", frozen broad backbone)
      └── broad_w200  (fine-tuned on "processed_small_window")
            └── w200_wmissing  (fine-tuned on "processed_small_window_missing_data")
                  └── w200_wmissing_adapter  (adapter on "processed_small_window_missing_data_n10")
+
+
+Training data summary
+---------------------
+
+Which model trains on which dataset and whether it uses fine-tuning:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 18 25 18 10 10 12
+
+   * - Model
+     - Fine-tuning
+     - Dataset
+     - Source scenarios
+     - Window
+     - Samples
+     - Pairs
+   * - ``narrow``
+     - No (from scratch)
+     - ``processed_narrow``
+     - constant only
+     - w2000
+     - 50
+     - 200
+   * - ``broad``
+     - No (from scratch)
+     - ``processed``
+     - all
+     - w2000
+     - 50
+     - 200
+   * - ``broad_w200``
+     - Yes ← ``broad``
+     - ``processed_small_window``
+     - 13 high-Ne stdpopsim
+     - w200
+     - 50
+     - 200
+   * - ``broad+adapter``
+     - Yes ← ``broad``
+     - ``processed_n10``
+     - all
+     - w2000
+     - 10
+     - 20
+   * - ``w200_wmissing``
+     - Yes ← ``broad_w200``
+     - ``processed_small_window_missing_data``
+     - 13 high-Ne stdpopsim
+     - w200
+     - 50
+     - 200 + bitmask
+   * - ``w200_wmissing_adapter``
+     - Yes ← ``w200_wmissing``
+     - ``processed_small_window_missing_data_n10``
+     - 13 high-Ne stdpopsim
+     - w200
+     - 10
+     - 20 + bitmask
 
 
 CLI reference
@@ -76,7 +134,7 @@ Trained from scratch. 6 layers, 6 epochs.
 
    python -m cxt.train \
        --model narrow \
-       --dataset-path /path/to/processed \
+       --dataset-path /path/to/base_dataset/processed_narrow \
        --gpus 0 1 2 \
        --epochs 6
 
@@ -98,24 +156,7 @@ serves as the backbone for all downstream fine-tuning.
        --epochs 2
 
 
-3. ``residual``
-^^^^^^^^^^^^^^^
-
-Trained from scratch with residual (log-deviation-from-mean) targets.
-Same architecture as broad.
-
-**Checkpoint:** ``residual_epoch=1-step=5280.ckpt``
-
-.. code-block:: bash
-
-   python -m cxt.train \
-       --model residual \
-       --dataset-path /path/to/processed \
-       --gpus 0 1 2 \
-       --epochs 2
-
-
-4. ``broad_w200``
+3. ``broad_w200``
 ^^^^^^^^^^^^^^^^^
 
 Fine-tuned from the ``broad`` checkpoint on 200 bp window data. Uses a
@@ -134,7 +175,7 @@ reduced learning rate.
        --checkpoint /path/to/broad_epoch=1-step=5280.ckpt
 
 
-5. ``w200_wmissing``
+4. ``w200_wmissing``
 ^^^^^^^^^^^^^^^^^^^^
 
 Fine-tuned from the ``broad_w200`` checkpoint on data with encoded
@@ -154,7 +195,7 @@ missingness. The ``w200_wmissing`` preset automatically sets
        --checkpoint /path/to/broad_w200_epoch=1-step=944.ckpt
 
 
-6. ``broad+adapter``
+5. ``broad+adapter``
 ^^^^^^^^^^^^^^^^^^^^
 
 Lightweight adapter on top of a frozen ``broad`` backbone. Trained on
@@ -175,7 +216,7 @@ Lightweight adapter on top of a frozen ``broad`` backbone. Trained on
        --checkpoint /path/to/broad_epoch=1-step=5280.ckpt
 
 
-7. ``w200_wmissing_adapter``
+6. ``w200_wmissing_adapter``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Adapter on a frozen ``w200_wmissing`` backbone, trained on 10-sample
@@ -215,9 +256,8 @@ For reference, here is the full pipeline from simulation to checkpoints:
    │    → processed_small_window_missing_data_n10   (+ n10)     │
    │                                                             │
    │ 3. TRAIN  (python -m cxt.train)                            │
-   │    narrow           ← processed                            │
+   │    narrow           ← processed_narrow (constant only)     │
    │    broad            ← processed                            │
-   │    residual         ← processed                            │
    │    broad_w200       ← processed_small_window + broad ckpt  │
    │    w200_wmissing    ← processed_sw_missing + broad_w200    │
    │    broad+adapter    ← processed_n10 + broad ckpt           │

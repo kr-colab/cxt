@@ -58,7 +58,8 @@ Pipeline overview
    │                                                                      │
    │  STAGE 2: PREPROCESS      python -m cxt.preprocess                  │
    │  ──────────────────                                                  │
-   │  5 preprocessed datasets:                                            │
+   │  6 preprocessed datasets:                                            │
+   │    processed_narrow         (w2000, n50, 200 pairs, constant only)  │
    │    processed                 (w2000, n50, 200 pairs)                │
    │    processed_n10             (w2000, n10, 20 pairs)                 │
    │    processed_small_window    (w200, n50, 200 pairs)                 │
@@ -68,14 +69,13 @@ Pipeline overview
    │                                                                      │
    │  STAGE 3: TRAIN           python -m cxt.train                       │
    │  ──────────────                                                      │
-   │  7 checkpoints in dependency order:                                  │
-   │    narrow           ← processed                                     │
+   │  6 checkpoints in dependency order:                                  │
+   │    narrow           ← processed_narrow (constant only)              │
    │    broad            ← processed                                     │
-   │    residual         ← processed                                     │
    │    broad_w200       ← processed_small_window + broad ckpt           │
    │    w200_wmissing    ← processed_sw_missing + broad_w200 ckpt        │
-   │    broad+adapter    ← processed_n10 + broad ckpt                    │
-   │    w200_wmissing_adapter ← processed_sw_missing_n10 + w200 ckpt     │
+   │    broad+adapter    ← processed_n10 + broad ckpt                     │
+   │    w200_wmissing_adapter ← processed_sw_missing_n10 + w200_wmissing │
    │                                                                      │
    │  STAGE 4: FIGURES         python -m figures.main.*                   │
    │  ────────────────                                                    │
@@ -226,6 +226,11 @@ whether a missingness bitmask is encoded:
      - Pairs
      - Samples
      - Bitmask
+   * - ``processed_narrow``
+     - 2,000 bp
+     - 200
+     - 50
+     - No (constant scenario only)
    * - ``processed``
      - 2,000 bp
      - 200
@@ -256,23 +261,67 @@ whether a missingness bitmask is encoded:
 Training details
 ----------------
 
-Stage 3 trains all 7 model checkpoints respecting the dependency chain.
+Stage 3 trains six model checkpoints respecting the dependency chain.
 ``run_fresh.sh`` installs each checkpoint into ``BASE_DIR/checkpoints/``
 after training so that figure generation uses the freshly trained models.
 
-.. code-block:: text
+Which model trains on which dataset:
 
-   narrow  (from scratch, 6 epochs)
-   broad   (from scratch, 2 epochs)   ← backbone for downstream
-   residual (from scratch, 2 epochs)
+.. list-table::
+   :header-rows: 1
+   :widths: 18 18 25 18 10 10 12
 
-   broad_w200          ← broad + processed_small_window, lr=3e-5
-     └── w200_wmissing ← broad_w200 + processed_sw_missing, lr=3e-5
-           └── w200_wmissing_adapter ← adapter, 10 epochs, lr=3e-5
+   * - Model
+     - Fine-tuning
+     - Dataset
+     - Source scenarios
+     - Window
+     - Samples
+     - Pairs
+   * - ``narrow``
+     - No (from scratch)
+     - ``processed_narrow``
+     - constant only
+     - w2000
+     - 50
+     - 200
+   * - ``broad``
+     - No (from scratch)
+     - ``processed``
+     - all
+     - w2000
+     - 50
+     - 200
+   * - ``broad_w200``
+     - Yes ← ``broad``
+     - ``processed_small_window``
+     - 13 high-Ne stdpopsim
+     - w200
+     - 50
+     - 200
+   * - ``broad+adapter``
+     - Yes ← ``broad``
+     - ``processed_n10``
+     - all
+     - w2000
+     - 10
+     - 20
+   * - ``w200_wmissing``
+     - Yes ← ``broad_w200``
+     - ``processed_small_window_missing_data``
+     - 13 high-Ne stdpopsim
+     - w200
+     - 50
+     - 200 + bitmask
+   * - ``w200_wmissing_adapter``
+     - Yes ← ``w200_wmissing``
+     - ``processed_small_window_missing_data_n10``
+     - 13 high-Ne stdpopsim
+     - w200
+     - 10
+     - 20 + bitmask
 
-   broad+adapter       ← broad + processed_n10, 3 epochs
-
-See :doc:`training` for hyperparameter tables.
+See :doc:`training` for the full checkpoint commands and hyperparameters.
 
 
 Figure details

@@ -34,7 +34,7 @@ FIG_CACHE_SUPP="${BASE_DIR}/figures/output/supplementary/cache"
 # ---------------------------------------------------------------------------
 # Hardware — GPU 1,2 and 80 CPUs
 # ---------------------------------------------------------------------------
-GPUS="1 2 3"
+GPUS="0 1 2"
 SIM_WORKERS=80
 PREPROCESS_WORKERS=80
 TRAIN_WORKERS=16
@@ -71,9 +71,9 @@ fi
 # shellcheck disable=SC1091
 source "${VENV_DIR}/bin/activate"
 echo "Installing cxt and dependencies ..."
-uv pip install -e "${REPO_ROOT}" \
+uv pip install --link-mode copy -e "${REPO_ROOT}" \
     msprime tskit stdpopsim \
-    torch torchtune lightning einops tqdm \
+    torch torchtune torchao lightning einops tqdm \
     numpy scipy pandas \
     matplotlib seaborn \
     tszip requests \
@@ -254,7 +254,19 @@ do_preprocess() {
     done
     log "ts_large_pop: ${#large_pop_species[@]} species symlinked"
 
-    # 1. processed (w2000, 50 samples, 200 pairs) — used by narrow, broad, residual
+    # 0. processed_narrow (w2000, 50 samples, 200 pairs) — constant scenario only, used by narrow
+    run_step "Preprocess: processed_narrow" \
+        python -m cxt.preprocess \
+            --base_dir "${DATA_DIR}/base_dataset" \
+            --out_subdir processed_narrow \
+            --window_size 2000 \
+            --num_pairs 200 \
+            --train_ratio 0.9 \
+            --global_seed 12345 \
+            --num_workers "${PREPROCESS_WORKERS}" \
+            --skip_existing
+
+    # 1. processed (w2000, 50 samples, 200 pairs) — used by broad
     run_step "Preprocess: processed" \
         python -m cxt.preprocess \
             --base_dir "${DATA_DIR}" \
@@ -357,6 +369,7 @@ do_train() {
     log "============================================"
 
     PROCESSED="${DATA_DIR}/processed"
+    PROCESSED_NARROW="${DATA_DIR}/base_dataset/processed_narrow"
     PROCESSED_N10="${DATA_DIR}/processed_n10"
     PROCESSED_SW="${DATA_DIR}/processed_small_window"
     PROCESSED_SWM="${DATA_DIR}/processed_small_window_missing_data"
@@ -366,12 +379,12 @@ do_train() {
 
     # ---- From-scratch models ----
 
-    # 1. narrow (6 layers, 6 epochs)
+    # 1. narrow (6 layers, 6 epochs) — constant scenario only
     touch "${CKPT_DIR}/.train_marker_narrow"
     run_step "Train: narrow" \
         python -m cxt.train \
             --model narrow \
-            --dataset-path "${PROCESSED}" \
+            --dataset-path "${PROCESSED_NARROW}" \
             --gpus ${GPUS} \
             --epochs 6 \
             --workers "${TRAIN_WORKERS}" \
@@ -390,18 +403,6 @@ do_train() {
             --log-dir "${BASE_DIR}"
     install_ckpt "broad" "broad_epoch=1-step=5280.ckpt"
     BROAD_CKPT="${CKPT_CACHE}/broad/broad_epoch=1-step=5280.ckpt"
-
-    # 3. residual (10 layers, 2 epochs)
-    touch "${CKPT_DIR}/.train_marker_residual"
-    run_step "Train: residual" \
-        python -m cxt.train \
-            --model residual \
-            --dataset-path "${PROCESSED}" \
-            --gpus ${GPUS} \
-            --epochs 2 \
-            --workers "${TRAIN_WORKERS}" \
-            --log-dir "${BASE_DIR}"
-    install_ckpt "residual" "residual_epoch=1-step=5280.ckpt"
 
     # ---- Fine-tuned from broad ----
 

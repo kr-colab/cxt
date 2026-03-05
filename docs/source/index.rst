@@ -28,9 +28,9 @@ Key features
   estimates for each genomic window.
 - **Bias correction** -- optional Bayesian diversity-based correction accounts
   for mutation-rate scaling and missingness.
-- **Multiple model variants** -- narrow, broad, broad_w200, residual,
-  w200_wmissing, and adapter-based models for different sample sizes and
-  data characteristics.
+- **Multiple model variants** -- narrow, broad, broad_w200, w200_wmissing,
+  and adapter-based models for different sample sizes and data
+  characteristics.
 - **Multi-GPU inference** -- pairs are automatically sharded across GPUs for
   high throughput.
 
@@ -57,10 +57,6 @@ Model variants
      - ``PRESETS["broad_w200"]``
      - 10
      - 200 bp windows for fine-scale resolution in large-\ :math:`N_e` species
-   * - ``residual``
-     - ``PRESETS["residual"]``
-     - 10
-     - Predicts log-residuals from the population mean
    * - ``w200_wmissing``
      - ``PRESETS["w200_wmissing"]``
      - 10

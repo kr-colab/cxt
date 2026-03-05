@@ -332,6 +332,7 @@ def main():
             lit_model = LitDecoder(model_cfg, training_config=train_cfg.__dict__)
 
     torch.set_float32_matmul_precision("medium")
+    progress = L.pytorch.callbacks.TQDMProgressBar(refresh_rate=10)
     trainer_kwargs = dict(
         max_epochs=args.epochs,
         accelerator="auto",
@@ -339,6 +340,7 @@ def main():
         precision="bf16-mixed",
         strategy="ddp",
         accumulate_grad_batches=train_cfg.grad_accum_steps,
+        callbacks=[progress],
     )
     if args.log_dir:
         trainer_kwargs["default_root_dir"] = args.log_dir
