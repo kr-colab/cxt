@@ -1,20 +1,25 @@
 Demography Inference and Coalescence Rates
 ==========================================
 
-This example benchmarks cxt on a realistic human demographic model
-(Zigzag_1S14 from ``stdpopsim``) and converts the resulting TMRCA
-distribution into coalescence-rate curves.
+Estimating pairwise coalescence rates provides a direct window into changes
+in effective population size through time. This page demonstrates how to
+convert cxt's TMRCA predictions into coalescence-rate curves and compares
+them against Singer+Polegon and SMC++ on three species:
+*H. sapiens* (Zigzag_1S14), *A. thaliana* (SouthMiddleAtlas_1D17), and
+*B. taurus* (HolsteinFries_1M13), all from ``stdpopsim``.
 
 
 .. figure:: figures/figure5_demography.png
    :align: center
    :width: 100%
 
-   **Figure 5.** Demography inference. Coalescence rates inferred by cxt
-   (blue) compared to the inference limit from discretized true TMRCAs (red)
-   and the theoretical expectation from the Zigzag_1S14 demographic model
-   (black). The cxt curve closely tracks both the true coalescence rates
-   and the demographic expectation across five orders of magnitude in time.
+   **Figure 5.** Inverse-instantaneous coalescence rate (IICR) calculation
+   for the piecewise-constant demography of (A) *H. sapiens*, (B)
+   *A. thaliana*, and (C) *B. taurus*. The inference of pairwise-coalescence
+   events leads to the implicit inference of demography estimates through
+   the marginal coalescence distribution assuming coalescence occurs as a
+   Poisson process. For each scenario 10 Mb and 25 diploid samples have
+   been used to achieve resolution throughout the specified time windows.
 
 
 Setup and imports
@@ -193,21 +198,29 @@ to the inference limit across multiple species.
    :align: center
    :width: 100%
 
-   **Figure 3.** TMRCA KDE distributions across stdpopsim species (flat
-   recombination). Each panel compares the cxt distribution to the
-   inference-limit distribution for a different species.
+   **Figure 3.** Evaluation of marginal coalescence distribution inference
+   (blue line) against the true distribution (black line), probing the
+   model's capacity to distinguish among many scenarios based on context
+   alone. The broad model's ability to infer a stdpopsim v0.2 coalescence
+   distribution is tested, which includes diverse mutation and recombination
+   rates, as well as demographic scenarios. All results shown are from new
+   simulations, not included in the original training dataset. No genetic
+   map was used for the inference shown here.
 
 .. figure:: figures/figure3_tmrca_kdes_map.png
    :align: center
    :width: 100%
 
-   **Figure 3 (continued).** Same comparison for species simulated with
-   genetic maps.
+   **Figure 3 (genetic maps).** Same evaluation with an underlying genetic
+   map. The model itself was trained with and without genetic maps.
 
 .. figure:: figures/figure4_stdpopsim_v3.png
    :align: center
    :width: 100%
 
-   **Figure 4.** Out-of-distribution benchmark. cxt predictions on species
-   not seen during training, demonstrating generalization across diverse
-   demographic histories and genome architectures.
+   **Figure 4.** Out-of-sample evaluation of the broad model on stdpopsim
+   v0.3. Each panel shows inferred marginal coalescence distributions
+   (dashed) against true distributions (shaded). Data were simulated from
+   the novel species and demographic histories added in stdpopsim v0.3.
+   All results are from simulations previously unseen during training
+   (top row: cxt; middle row: Singer+Polegon; bottom row: SMC++).

@@ -12,7 +12,7 @@ import cxt
 from cxt.checkpoint import CHECKPOINT_REGISTRY, load_model
 from cxt.config import PRESETS
 from cxt.translate import generate_causal_mask, generate, to_log_times
-from cxt.simulate import simulate_parameterized_tree_sequence
+from cxt.utils import simulate_parameterized_tree_sequence
 from cxt.sfs import build_src, basic_filtering
 
 

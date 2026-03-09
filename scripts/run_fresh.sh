@@ -40,12 +40,14 @@ PREPROCESS_WORKERS=80
 TRAIN_WORKERS=16
 
 # ---------------------------------------------------------------------------
-# External data for figures (mosquito, human, benchmarks — unchanged)
+# External data for figures — defaults to ~/cxt_paper_archive/
+# Override CXT_PAPER_ARCHIVE or individual vars to relocate.
 # ---------------------------------------------------------------------------
-BITMASK="${BITMASK:-/sietch_colab/data_share/Ag1000G/Ag3.0/args_trees/singer/agp3.is_accessible.txt.npz}"
-export AG1000G_DATA_DIR="${AG1000G_DATA_DIR:-/sietch_colab/data_share/Ag1000G/Ag3.0/args_trees/tsinfer_data_v2}"
+_ARCHIVE="${CXT_PAPER_ARCHIVE:-${HOME}/cxt_paper_archive}"
+BITMASK="${BITMASK:-${_ARCHIVE}/ag1000g/agp3.is_accessible.txt.npz}"
+export AG1000G_DATA_DIR="${AG1000G_DATA_DIR:-${_ARCHIVE}/ag1000g}"
 export AG1000G_ACCESSIBILITY="${AG1000G_ACCESSIBILITY:-${BITMASK}}"
-export HG1KG_TSZ_DIR="${HG1KG_TSZ_DIR:-/sietch_colab/data_share/hg1kg/tsinfer-trees/working}"
+export HG1KG_TSZ_DIR="${HG1KG_TSZ_DIR:-${_ARCHIVE}/hg1kg}"
 
 # Direct figure checkpoint loading to the new cache
 export CXT_CHECKPOINT_CACHE="${CKPT_CACHE}"

@@ -10,19 +10,20 @@ decode chromosome-scale TMRCA landscapes and zoom into the LCT locus
    :align: center
    :width: 100%
 
-   **Figure 6a.** Chromosome-wide TMRCA for GBR samples. Left: chromosome 2
-   with the LCT locus highlighted in red. Right: chromosome 6 with the HLA
-   region highlighted. The LCT region shows a pronounced TMRCA trough
-   consistent with recent positive selection, while the HLA region exhibits
-   elevated TMRCA due to long-term balancing selection.
+   **Figure 6 (top).** Inference of coalescent times from 25 focal pairs of
+   British individuals from the 1000 Genomes Project. Chromosome-wide
+   TMRCA landscapes for chromosomes 2 (left) and 6 (right).
 
 .. figure:: figures/figure6_human_1kg_zoom.png
    :align: center
    :width: 100%
 
-   **Figure 6b.** Zoomed view of the LCT and HLA regions with individual
-   replicate traces (light blue), IQR band (shaded), mean (solid) and
-   median (dashed) trajectories, and gene annotations (crimson bars).
+   **Figure 6 (bottom).** Zoomed view of the LCT region on chromosome 2
+   (left) and the HLA region on chromosome 6 (right). Each pivot pair has
+   been inferred 15 times to get reliable mean, median, and variance
+   estimates. Light blue lines show the respective inferences of the 25
+   pairs; the IQR (25--75%) band, mean, and median are overlaid with gene
+   annotations.
 
 
 Pipeline overview

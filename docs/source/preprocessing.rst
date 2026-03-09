@@ -97,7 +97,7 @@ used for the 6-layer narrow model.
 1. ``processed`` -- full base dataset (w2000)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Used to train: **broad**, **residual**
+Used to train: **broad**
 
 .. code-block:: bash
 

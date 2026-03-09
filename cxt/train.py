@@ -33,7 +33,26 @@ torch.serialization.add_safe_globals([TrainingConfig, ModelConfig])
 # ---------------------------------------------------------------------------
 
 class IEAdapter(nn.Module):
-    """Sample-size adapter with SwiGLU bottleneck and optional squeeze-excite."""
+    """Sample-size adapter with SwiGLU bottleneck and optional squeeze-excite.
+
+    Maps SFS features from *ie_in* frequency bins to *ie_out* bins so
+    that a backbone trained at one sample size can be re-used at another.
+    A channel-wise squeeze-and-excite gate (when *use_se* is True)
+    recalibrates the input before the bottleneck projection.
+
+    Parameters
+    ----------
+    ie_in : int
+        Number of input frequency bins.
+    ie_out : int
+        Number of output frequency bins.
+    bottleneck : int
+        Hidden dimension of the SwiGLU projection.
+    dropout : float
+        Dropout probability applied after the SwiGLU gate.
+    use_se : bool
+        Enable channel squeeze-and-excite gating.
+    """
 
     def __init__(self, ie_in: int, ie_out: int = 50, bottleneck: int = 64,
                  dropout: float = 0.1, use_se: bool = True):
@@ -96,7 +115,33 @@ def _select_backbone_params(backbone, strategy: str = "none", last_n: int = 2):
 
 
 class FrozenDecoderWithAdapter(nn.Module):
-    """Backbone + adapter wrapper for low-sample-size fine-tuning."""
+    """Frozen backbone + :class:`IEAdapter` wrapper for sample-size adaptation.
+
+    The backbone is frozen on construction; only the adapter parameters
+    (and, optionally, the last *N* transformer blocks / LayerNorm layers
+    selected by *unfreeze*) are trainable.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        Pretrained :class:`~cxt.model.TokenFreeDecoder`.
+    ie_in : int
+        Number of input frequency bins (new sample size).
+    ie_out : int
+        Number of output frequency bins (backbone's ``num_samples``).
+    adapter_bottleneck : int
+        Bottleneck dimension for :class:`IEAdapter`.
+    adapter_dropout : float
+        Dropout rate inside the adapter.
+    new_mask_index : int or None
+        Frequency bin replaced by a learnable mask token.
+    unfreeze : str
+        Backbone unfreezing strategy (``"none"``, ``"ln"``,
+        ``"lastN"``, or ``"ln_lastN"``).
+    last_n : int
+        Number of final transformer blocks to unfreeze when the
+        strategy includes ``"lastN"``.
+    """
 
     def __init__(self, backbone: nn.Module, ie_in: int, ie_out: int = 50,
                  adapter_bottleneck: int = 196, adapter_dropout: float = 0.1,
@@ -124,7 +169,19 @@ class FrozenDecoderWithAdapter(nn.Module):
 # ---------------------------------------------------------------------------
 
 class LitDecoder(L.LightningModule):
-    """Standard (non-adapter) training."""
+    """PyTorch Lightning wrapper for standard (non-adapter) training.
+
+    Wraps :class:`~cxt.model.TokenFreeDecoder` with a cosine-decay LR
+    schedule (linear warmup followed by cosine annealing to *min_lr*).
+
+    Parameters
+    ----------
+    gpt_config : ModelConfig
+        Model architecture configuration.
+    training_config : dict or None
+        Training hyper-parameters (learning rate, weight decay, warmup,
+        etc.).  Defaults to :class:`~cxt.config.TrainingConfig` values.
+    """
 
     def __init__(self, gpt_config, training_config: dict | None = None):
         super().__init__()
@@ -174,7 +231,34 @@ class LitDecoder(L.LightningModule):
 
 
 class LitAdapterDecoder(L.LightningModule):
-    """Adapter-based fine-tuning with frozen backbone."""
+    """PyTorch Lightning wrapper for adapter-based fine-tuning.
+
+    Loads a pretrained :class:`~cxt.model.TokenFreeDecoder` backbone,
+    freezes it, and wraps it in a
+    :class:`FrozenDecoderWithAdapter` that trains only the
+    :class:`IEAdapter` head (plus optionally the last *N* transformer
+    blocks and all LayerNorm parameters).
+
+    Parameters
+    ----------
+    gpt_config : ModelConfig
+        Model architecture configuration.
+    pretrained_ckpt : str or None
+        Path to a pretrained backbone checkpoint.
+    ie_new : int or None
+        Input sample dimension for the adapter (differs from the
+        backbone's ``num_samples`` when adapting to a new sample size).
+    adapter_bottleneck : int
+        Hidden dimension of the SwiGLU bottleneck inside :class:`IEAdapter`.
+    adapter_dropout : float
+        Dropout rate inside the adapter.
+    new_mask_index : int or None
+        If set, the adapter replaces this SFS frequency bin with a
+        learnable mask token (used to mask singletons at a new sample
+        size).
+    training_config : dict or None
+        Training hyper-parameters.
+    """
 
     def __init__(self, gpt_config, pretrained_ckpt: str | None = None,
                  ie_new: int | None = None, adapter_bottleneck: int = 32,

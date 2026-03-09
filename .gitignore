@@ -51,3 +51,8 @@ docs/build/
 # Python
 __pycache__/
 *.pyc
+
+# Verification artefacts (checkpoints are large, re-download on demand)
+.verification/checkpoints/
+.verification/test_input.vcf
+.verification/verification_figure.png

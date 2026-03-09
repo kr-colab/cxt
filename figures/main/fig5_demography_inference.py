@@ -21,6 +21,7 @@ import tskit
 import cxt
 from cxt.preprocess import interpolate_tmrcas
 from cxt.utils import coalescence_rates
+from figures.paths import SINGER_BASE
 from figures.utils import analyze_ts_with_smcpp_multi
 
 
@@ -54,7 +55,6 @@ SPECIES_CONFIGS = [
     },
 ]
 
-SINGER_BASE = "/sietch_colab/data_share/cxt/singer-benchmarks"
 MCMC_REPS = np.arange(50, 100, 5)
 
 

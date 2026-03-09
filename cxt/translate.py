@@ -40,6 +40,24 @@ _MASK_CACHE: dict = {}
 
 
 def generate_causal_mask(seq_len: int, full_attention_n: int = 0, device="cpu"):
+    """Build a boolean causal attention mask with an optional fully-visible prefix.
+
+    Parameters
+    ----------
+    seq_len : int
+        Total sequence length.
+    full_attention_n : int
+        The first *full_attention_n* tokens attend to each other
+        bidirectionally (used for the encoder portion of the
+        source-target concatenation).
+    device : str
+        Torch device for the mask tensor.
+
+    Returns
+    -------
+    mask : Tensor
+        Boolean mask of shape ``(1, 1, seq_len, seq_len)``.
+    """
     key = (str(device), seq_len, full_attention_n)
     if key not in _MASK_CACHE:
         mask = torch.tril(torch.ones(seq_len, seq_len, device=device))
@@ -79,6 +97,21 @@ def vcf_parser(path: str) -> Tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------------------
 
 def to_log_times(yhat, rep_mode=False):
+    """Convert discrete token indices to log-TMRCA values on the output grid.
+
+    Parameters
+    ----------
+    yhat : Tensor
+        Token index predictions from :func:`generate`.
+    rep_mode : bool
+        If True, *yhat* has shape ``(N, n_reps, T)``; the returned
+        array is transposed to ``(n_reps, N, T-1)``.
+
+    Returns
+    -------
+    log_tmrca : ndarray
+        Continuous log-TMRCA values looked up from the discretisation grid.
+    """
     if rep_mode:
         return TIMES[yhat[:, :, 1:].cpu().numpy() - 2].transpose(1, 0, 2)
     return TIMES[yhat[:, 1:].cpu().numpy() - 2]
@@ -153,7 +186,38 @@ def generate(
     decode_bar: bool = False,
     adapter=None,
 ) -> torch.Tensor:
-    """Autoregressive generation with KV cache."""
+    """Autoregressive generation with KV cache.
+
+    Parameters
+    ----------
+    model : TokenFreeDecoder
+        Model in eval mode.
+    src : Tensor
+        Source features of shape ``(N, 2, W_scales, 500, num_samples)``.
+    B : int
+        Micro-batch size (number of sequences decoded at once).
+    device : str
+        Device for generation (e.g. ``"cuda"`` or ``"cpu"``).
+    top_k : int or None
+        If set, restrict sampling to the *top_k* most likely tokens.
+    base_seed : int
+        Base seed for per-row deterministic generators.
+    cache_matching : bool
+        Dynamically resize KV caches to match batch size.
+    progress : bool
+        Show a tqdm progress bar over micro-batches.
+    decode_bar : bool
+        Show a per-token progress bar inside each micro-batch.
+    adapter : nn.Module or None
+        Optional :class:`~cxt.train.IEAdapter` applied to *src* before
+        the backbone forward pass.
+
+    Returns
+    -------
+    tokens : Tensor
+        Generated token indices of shape ``(N, 501)``
+        (includes the start token).
+    """
     model.eval()
     N = src.size(0)
     gens = _make_generators(N, device, base_seed)
@@ -237,7 +301,39 @@ def multi_gpu_generate(
     decode_bar: bool = False,
     adapter=None,
 ) -> torch.Tensor:
-    """Shard source across GPUs and generate in parallel threads."""
+    """Shard source across GPUs and generate in parallel threads.
+
+    Creates one deep-copy of *model* (and *adapter*) per device, splits
+    *src* evenly, and runs :func:`generate` in parallel Python threads.
+
+    Parameters
+    ----------
+    model : TokenFreeDecoder
+        Model on CPU (will be replicated per device).
+    src : Tensor
+        Source features of shape ``(N, ...)``.
+    devices : list[str]
+        List of CUDA device strings, e.g. ``["cuda:0", "cuda:1"]``.
+    B_per_device : int
+        Micro-batch size per device.
+    top_k : int
+        Top-k sampling cutoff.
+    base_seed : int
+        Base seed forwarded to :func:`generate`.
+    cache_matching : bool
+        Resize KV caches per micro-batch.
+    progress : bool
+        Show progress bars.
+    decode_bar : bool
+        Per-token progress bars.
+    adapter : nn.Module or None
+        Optional adapter replicated per device.
+
+    Returns
+    -------
+    tokens : Tensor
+        Concatenated token indices on CPU, shape ``(N, 501)``.
+    """
     K = len(devices)
     N = src.size(0)
     shards = []

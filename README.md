@@ -1,31 +1,45 @@
-# cxt(kit): Coalescence x Translation (toolkit)
+# cxt: Coalescence and Translation
 
-A transformer-based method for inferring pairwise coalescent times (TMRCA) from
-genotype data using a language-modelling approach.
+![tests](https://img.shields.io/badge/tests-121_passing-brightgreen?style=flat-square&logo=pytest&logoColor=white)
+
+A language model for population genetics that infers pairwise coalescent times
+(TMRCA) from genotype data by reframing the problem as translation between
+observed mutation patterns and the latent ancestral recombination graph.
 
 <p align="center">
     <img src="docs/source/figures/logo_3d_2.png" alt="Logo" width="200">
 </p>
 
-[Full documentation on ReadTheDocs](https://cxt.readthedocs.io)
+**Korfmann K**, Pope NS, Meleghy M, Tellier A, Kern AD (2026).
+*Coalescence and Translation: A Language Model for Population Genetics.*
+PNAS.
+[[paper]](https://doi.org/10.1073/pnas.XXXXXXXXXX)
+[[docs]](https://cxt.readthedocs.io)
 
 ## Overview
 
-**cxt** treats TMRCA inference as a sequence-to-sequence translation task. For
-each pair of haplotypes it computes a multi-scale site-frequency spectrum (SFS)
-in sliding windows, feeds it through a token-free transformer decoder, and
-outputs a discretized log-TMRCA profile across the genome.
+**cxt** is a decoder-only transformer inspired by GPT-2 that autoregressively
+predicts pairwise coalescence times conditioned on local mutational context.
+For each pair of haplotypes it computes a multi-scale site-frequency spectrum
+(SFS) in sliding windows, feeds it through the transformer, and outputs a
+discretized log-TMRCA profile across the genome. The generative process is
+repeated multiple times to sample from an approximate posterior over TMRCA
+trajectories, providing well-calibrated uncertainty estimates.
 
 Key features:
 
 - **No tree-sequence inference** -- works directly on genotype matrices, VCF
   files, or `tskit` tree sequences.
-- **Stochastic sampling** -- multiple replicate predictions give uncertainty
-  estimates.
-- **Bias correction** -- optional Bayesian diversity-based correction.
-- **Multiple model variants** -- narrow, broad, broad\_w200, residual,
+- **Approximate posterior sampling** -- multiple stochastic replicates yield
+  well-calibrated uncertainty estimates for each genomic window.
+- **Bias correction** -- optional Bayesian diversity-based correction aligns
+  predicted diversity with the species mutation rate.
+- **Broad generalization** -- trained on nearly the full `stdpopsim` catalog,
+  generalizing across diverse demographic histories and genome architectures.
+- **Multiple model variants** -- narrow, broad, residual, broad\_w200,
   w200\_wmissing, and adapter-based models for different sample sizes.
-- **Multi-GPU inference** -- shards pairs across GPUs automatically.
+- **Multi-GPU inference** -- shards pairs across GPUs automatically; produces
+  over a million coalescence predictions in minutes.
 
 ## Installation
 
@@ -89,11 +103,14 @@ tmrca, index_map = cxt.translate(
 |------|--------|--------|-------------|
 | `narrow` | `PRESETS["narrow"]` | 6 | Smaller model, faster inference |
 | `broad` | `PRESETS["broad"]` | 10 | Main model, best accuracy |
+| `residual` | `PRESETS["residual"]` | 10 | Predicts log-residuals from population mean |
 | `broad_w200` | `PRESETS["broad_w200"]` | 10 | 200bp windows (fine-scale) |
-| `residual` | `PRESETS["residual"]` | 10 | Predicts log-residuals from mean |
 | `w200_wmissing` | `PRESETS["w200_wmissing"]` | 10 | 200bp windows, handles missingness |
 | `broad+adapter` | adapter on `broad` | 10 | 10-sample adapter on broad backbone |
 | `w200_wmissing_adapter` | adapter on `w200_wmissing` | 10 | 10-sample adapter with missingness |
+
+Pretrained checkpoints for all models are included in the repository
+under `checkpoints/` via Git LFS.
 
 ## Training
 
@@ -162,7 +179,7 @@ Run individual stages: `./scripts/run_fresh.sh simulate`, `preprocess`,
 `train`, or `figures`. Multiple stages can be combined:
 `./scripts/run_fresh.sh train figures`.
 
-## Package structure
+## Repository structure
 
 ```
 cxt/
@@ -178,7 +195,15 @@ cxt/
 ├── dataset.py               # PairDataset for training
 ├── simulation_ts_only.py    # Tree-sequence simulation CLI (msprime + stdpopsim)
 ├── preprocess.py            # TS → training data conversion
-└── utils.py                 # Grids, helpers, legacy simulation functions
+└── utils.py                 # Grids, helpers, simulation functions
+
+checkpoints/                 # Pretrained model weights (Git LFS)
+figures/                     # Paper figure reproduction scripts
+scripts/
+├── run_fresh.sh             # Full reproduce pipeline (simulate → figures)
+├── copy_checkpoints.sh      # Copy trained checkpoints into repo for LFS commit
+├── retrain_adapter.sh       # Retrain adapter models from existing backbone
+└── promote_dev_to_main.sh   # Merge dev branch into main with checkpoint migration
 ```
 
 ## Configuration
@@ -204,6 +229,18 @@ Key config flags:
   models, False for `w200_wmissing`)
 - `use_kv_cache`: Allocate KV cache for autoregressive decoding (set
   automatically by `for_inference()`)
+
+## Citation
+
+```bibtex
+@article{korfmann2026cxt,
+  title={Coalescence and Translation: A Language Model for Population Genetics},
+  author={Korfmann, Kevin and Pope, Nathaniel S. and Meleghy, Melinda and Tellier, Aur{\'e}lien and Kern, Andrew D.},
+  journal={Proceedings of the National Academy of Sciences},
+  year={2026},
+  doi={10.1073/pnas.XXXXXXXXXX}
+}
+```
 
 ## License
 

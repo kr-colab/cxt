@@ -104,7 +104,24 @@ def calculate_window_sfs(
 def basic_filtering(
     gm: np.ndarray, positions: np.ndarray, num_samples: int | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Remove non-biallelic and fixed sites."""
+    """Remove non-biallelic and fixed sites from a genotype matrix.
+
+    Parameters
+    ----------
+    gm : ndarray of shape ``(n_samples, n_sites)``
+        Haploid genotype matrix (0/1 entries expected for biallelic sites).
+    positions : ndarray of shape ``(n_sites,)``
+        Genomic positions corresponding to each column of *gm*.
+    num_samples : int or None
+        Total haploid sample count.  If None, inferred from ``gm.shape[0]``.
+
+    Returns
+    -------
+    gm_filtered : ndarray
+        Filtered genotype matrix.
+    positions_filtered : ndarray
+        Matching filtered positions.
+    """
     if num_samples is None:
         num_samples = gm.shape[0]
     non_bial = np.any(gm >= 2, axis=0)

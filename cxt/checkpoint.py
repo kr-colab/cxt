@@ -26,7 +26,6 @@ from cxt.config import ModelConfig, PRESETS, AdapterConfig
 # ---------------------------------------------------------------------------
 
 GITHUB_BASE = "https://github.com/kevinkorfmann/cxt/raw/main/checkpoints"
-LEGACY_GITHUB_BASE = "https://github.com/kevinkorfmann/cxt/raw/main/checkpoints_legacy"
 
 CHECKPOINT_REGISTRY: dict[str, dict] = {
     "broad": {
@@ -43,33 +42,8 @@ CHECKPOINT_REGISTRY: dict[str, dict] = {
     "broad_w200": {
         "filename": "broad_w200_epoch=1-step=944.ckpt",
     },
-    "w200_wmissing": {
-        "filename": "w200_wmissing_epoch=1-step=944.ckpt",
-    },
-    "w200_wmissing_adapter": {
-        "filename": "w200_wmissing_adapter_epoch=9-step=480.ckpt",
-        "base_preset": "w200_wmissing",
-        "adapter": AdapterConfig(ie_in=10),
-    },
-}
-
-LEGACY_REGISTRY: dict[str, dict] = {
     "residual": {
         "filename": "residual_epoch=1-step=5280.ckpt",
-    },
-    "broad": {
-        "filename": "broad_epoch=1-step=5280.ckpt",
-    },
-    "broad+adapter": {
-        "filename": "broad_adapter_epoch=2-step=792.ckpt",
-        "base_preset": "broad",
-        "adapter": AdapterConfig(ie_in=10),
-    },
-    "narrow": {
-        "filename": "narrow_epoch=5-step=4692.ckpt",
-    },
-    "broad_w200": {
-        "filename": "broad_w200_epoch=1-step=944.ckpt",
     },
     "w200_wmissing": {
         "filename": "w200_wmissing_epoch=1-step=944.ckpt",
@@ -115,43 +89,26 @@ def _download(url: str, dest: Path) -> None:
 def get_checkpoint_path(
     model_type: str,
     force_local: str | None = None,
-    legacy: bool = False,
 ) -> Path:
-    """Return local path to checkpoint, downloading if necessary.
-
-    Parameters
-    ----------
-    legacy : bool
-        If *True*, fetch from ``checkpoints_legacy/`` instead of the
-        default ``checkpoints/`` directory.  Use this to access the
-        original pre-reproduction checkpoints.
-    """
+    """Return local path to checkpoint, downloading if necessary."""
     if force_local:
         return Path(force_local)
 
-    registry = LEGACY_REGISTRY if legacy else CHECKPOINT_REGISTRY
-    base_url = LEGACY_GITHUB_BASE if legacy else GITHUB_BASE
-    cache_prefix = "legacy" if legacy else ""
-
-    info = registry.get(model_type)
+    info = CHECKPOINT_REGISTRY.get(model_type)
     if info is None:
-        available = sorted(registry)
-        label = "legacy " if legacy else ""
+        available = sorted(CHECKPOINT_REGISTRY)
         raise ValueError(
-            f"Unknown {label}model_type {model_type!r}. "
+            f"Unknown model_type {model_type!r}. "
             f"Available: {available}"
         )
 
-    if cache_prefix:
-        dest = _cache_dir() / cache_prefix / model_type / info["filename"]
-    else:
-        dest = _cache_dir() / model_type / info["filename"]
+    dest = _cache_dir() / model_type / info["filename"]
 
     if dest.exists():
         return dest
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    url = f"{base_url}/{model_type}/{info['filename']}"
+    url = f"{GITHUB_BASE}/{model_type}/{info['filename']}"
     _download(url, dest)
     return dest
 
@@ -179,23 +136,18 @@ def load_model(
     model_type: str = "broad",
     device: str = "cpu",
     force_local: str | None = None,
-    legacy: bool = False,
 ):
     """Load a pretrained cxt model ready for inference.
 
     Parameters
     ----------
     model_type : str
-        One of: broad, broad+adapter, narrow, broad_w200,
+        One of: broad, broad+adapter, narrow, residual, broad_w200,
         w200_wmissing, w200_wmissing_adapter.
-        Legacy-only models (e.g. ``"residual"``) require ``legacy=True``.
     device : str
         Target device (model is loaded on CPU first, then moved).
     force_local : str, optional
         Use this checkpoint path instead of downloading.
-    legacy : bool
-        If *True*, load from the archived pre-reproduction checkpoints
-        in ``checkpoints_legacy/``.
 
     Returns
     -------
@@ -206,8 +158,7 @@ def load_model(
 
     _inject_compat_aliases()
 
-    registry = LEGACY_REGISTRY if legacy else CHECKPOINT_REGISTRY
-    info = registry.get(model_type, {})
+    info = CHECKPOINT_REGISTRY.get(model_type, {})
     adapter_cfg = info.get("adapter")
     base_preset_name = info.get("base_preset", model_type)
 
@@ -216,7 +167,7 @@ def load_model(
 
     config = PRESETS[base_preset_name].for_inference(batch_size=1, device="cpu")
 
-    ckpt_path = get_checkpoint_path(model_type, force_local=force_local, legacy=legacy)
+    ckpt_path = get_checkpoint_path(model_type, force_local=force_local)
     ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
 
     if adapter_cfg is not None:

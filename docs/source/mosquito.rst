@@ -8,26 +8,36 @@ RDL insecticide-resistance locus.
 
 .. figure:: figures/figure7_mosquito_rdl.png
    :align: center
-   :width: 70%
+   :width: 100%
 
-   **Figure 7.** RDL sweep region (25.1--25.6 Mb on chr2L) across five
-   African *A. gambiae* populations. Each panel shows individual replicate
-   traces (light blue), mean :math:`\pm` SD band, and the RDL gene
-   highlighted in red. The bottom track shows the Ag1000G accessibility
-   (missingness) pattern. Note the sharp TMRCA reduction at the RDL locus,
-   consistent with a selective sweep on insecticide resistance.
+   **Figure 7.** Inference of coalescent-time landscapes in the Ag1000G
+   *A. gambiae* dataset across five African populations using cxt. In the
+   upper panel, we analyze the Rdl region for Burkina Faso, Mali, Cameroon,
+   Ghana, and Uganda. For these countries, we infer coalescent times for 25
+   focal haplotype pairs per population; for Ghana, we analyze five diploid
+   individuals. Light-blue curves indicate per-pair coalescent-time
+   trajectories inferred by cxt, with the mean trend shown in darker blue.
+   The lower panel shows genome-wide coalescent-time landscapes across the
+   entirety of chromosome 2L for Uganda samples. Missing data density is
+   shown beneath both the regional and genome-wide panels as a genome
+   browser track.
 
 
 .. figure:: figures/figure8_inversion.png
    :align: center
    :width: 100%
 
-   **Figure 8.** Coalescent-time structure across the In(2L)a inversion.
-   **Top:** Bar chart comparing mean TMRCA in four genomic regions -- outside
-   the inversion (10--20 Mb), the core interval, inner proximal (+1.0 Mb),
-   and inner distal (-1.0 Mb) -- for each population and across all
-   populations combined. **Bottom:** Genome-wide 2L TMRCA profiles with the
-   inversion interval highlighted in blue.
+   **Figure 8.** Coalescent-time structure across the In(2L)a inversion on
+   chr2L. **Top:** mean TMRCA summaries for an outside background region
+   (10--20 Mb), the full inversion core interval, and two interior 0.5 Mb
+   windows positioned 1 Mb inside each breakpoint (mean :math:`\pm` s.e.m.
+   across replicate trajectories; "All" aggregates populations). **Bottom:**
+   genome-wide mean TMRCA curves shown per population and pooled ("All"),
+   with vertical guides marking inversion boundaries, breakpoint-adjacent
+   windows, and the interior sampling windows used for summary statistics.
+   Note that Ghana uses fewer haplotypes (*n* = 10) and a sample-size
+   adapter, yielding higher variance and slightly elevated breakpoint-region
+   estimates relative to its genomic baseline.
 
 
 Pipeline overview

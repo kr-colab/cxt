@@ -97,20 +97,19 @@ the true values from the simulated tree sequence.
        tool=r"$\mathbf{cxt}$-narrow: Constant $N_e$",
    )
 
-.. figure:: figures/cxt_constant.png
+.. figure:: figures/figure2_benchmark.png
    :align: center
-   :width: 60%
+   :width: 100%
 
-   **Constant** :math:`N_e` **benchmark.** Inferred (y-axis) versus true (x-axis)
-   pairwise TMRCA values using the cxt-narrow model. Each point is one
-   2 kb genomic window for one haplotype pair.
-
-.. figure:: figures/cxt_sawtooth_broad.png
-   :align: center
-   :width: 60%
-
-   **Sawtooth demography benchmark.** The same comparison under a more complex
-   sawtooth demographic model using the cxt-broad variant.
+   **Figure 2.** True versus predicted coalescence times for three inference
+   approaches across two demographic scenarios: a constant population size
+   and a fluctuating "sawtooth" demography. Top row: cxt-narrow evaluated
+   on the constant-size scenario (left) and on the sawtooth scenario
+   (middle), followed by cxt-broad evaluated on the sawtooth scenario
+   (right). Bottom row: Singer+Polegon evaluated on the constant-size
+   (left) and sawtooth (middle) scenarios, followed by SMC++ on the
+   constant-size and sawtooth scenarios. MSE values are reported within
+   each panel.
 
 Input formats
 -------------

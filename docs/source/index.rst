@@ -14,10 +14,17 @@ outputs a discretized log-TMRCA profile across the genome.
    :width: 100%
    :alt: cxt model architecture
 
-   **Figure 1.** Model schematic of the cxt architecture. Multi-scale windowed
-   SFS features are computed for each haplotype pair and fed through a
-   token-free transformer decoder that autoregressively produces discretized
-   log-TMRCA values across genomic windows.
+   **Figure 1.** cxt introduces the notion of next-coalescence prediction
+   (Left). cxt is a language model that conditions on a chosen "pivot"
+   haplotype pair and predicts the pair's TMRCA for each window. cxt
+   ingests mutational tensors constructed using the pivot pair and SFS values
+   computed in windows across a focal region. The model works
+   autoregressively: after each window is predicted, that estimate is
+   appended to the context and supplied to the next step, yielding a
+   step-wise reconstruction of the entire pairwise coalescent history.
+   In the right panel all :math:`\binom{50}{2}` pairwise coalescence curves
+   for a sample of 50 haplotypes were inferred simultaneously in under five
+   minutes on a single NVIDIA A100 GPU.
 
 Key features
 ------------
@@ -89,12 +96,14 @@ Model variants
 
    installation
    quick_start
+   verification
 
 .. toctree::
    :maxdepth: 2
    :caption: Usage Guide
 
    examples
+   finetune_missingness
    demography
    human
    mosquito

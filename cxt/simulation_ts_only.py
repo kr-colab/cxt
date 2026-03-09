@@ -169,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_samples', type=int, default=2_000_000, help='Number of samples to generate')
     parser.add_argument('--n_individuals', type=int, default=25, help='Number of diploid individuals to simulate')
     parser.add_argument('--batch_size', type=int, default=1000, help='Batch size for saving data')
-    parser.add_argument('--data_dir', type=str, default='/sietch_colab/kkor/base_dataset', help='Directory to save data')
+    parser.add_argument('--data_dir', type=str, default='./data', help='Directory to save data')
     parser.add_argument('--scenario', type=str, choices=[
         'constant', 'sawtooth','stdpopsim_homsap', 'stdpopsim_homsap_map',
           'stdpopsim_bostau', 'stdpopsim_canfam', 'stdpopsim_canfam_map', 'stdpopsim_pantro',

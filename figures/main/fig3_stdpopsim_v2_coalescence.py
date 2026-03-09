@@ -152,7 +152,7 @@ def plot_kdes(indices, tmrca_results, metadata_df, cols, output_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="figures/output/main")
-    parser.add_argument("--cache-dir", default="/sietch_colab/data_share/cxt_scratch/figures/output/main/cache/fig3")
+    parser.add_argument("--cache-dir", default="figures/output/main/cache/fig3")
     parser.add_argument("--devices", nargs="+", default=["cuda:0", "cuda:1", "cuda:2"])
     parser.add_argument("--batch-size", type=int, default=512)
     args = parser.parse_args()

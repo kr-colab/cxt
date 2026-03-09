@@ -22,6 +22,21 @@ from cxt.modules import MutationsToLatentSpace, Block, LayerNorm
 
 
 class TokenFreeDecoder(nn.Module):
+    """Token-free causal decoder that operates directly on SFS features.
+
+    The encoder path projects multi-scale SFS windows into the latent
+    space via :class:`~cxt.modules.MutationsToLatentSpace`, concatenates
+    an output-token embedding, and passes the combined sequence through
+    a stack of :class:`~cxt.modules.Block` layers with rotary position
+    embeddings.  During inference the KV cache avoids redundant
+    computation.
+
+    Parameters
+    ----------
+    config : ModelConfig
+        Full model configuration (see :class:`cxt.config.ModelConfig`).
+    """
+
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -76,6 +91,30 @@ class TokenFreeDecoder(nn.Module):
     # Forward
     # ------------------------------------------------------------------
     def forward(self, x, y, attn_mask, position=None, use_cache=False, calculate_loss=True):
+        """Run the encoder-decoder forward pass.
+
+        Parameters
+        ----------
+        x : Tensor
+            SFS source features of shape ``(B, 2, W_scales, N_windows, N_samples)``.
+        y : Tensor
+            Target token indices of shape ``(B, T_y)`` (training) or ``(B, 1)`` (cached step).
+        attn_mask : Tensor
+            Boolean causal attention mask.
+        position : int or None
+            Current decode position when using the KV cache.
+        use_cache : bool
+            Enable KV-cache path for autoregressive generation.
+        calculate_loss : bool
+            If True, compute and return cross-entropy loss alongside logits.
+
+        Returns
+        -------
+        logits : Tensor
+            Predicted logits of shape ``(B, T_y, output_dim)``.
+        loss : Tensor, optional
+            Cross-entropy loss (only when *calculate_loss* is True).
+        """
         use_cache = use_cache or self.config.use_kv_cache
 
         if use_cache:

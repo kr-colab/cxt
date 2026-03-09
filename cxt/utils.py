@@ -23,7 +23,28 @@ def discretize(sequence, population_time):
     return indices.tolist()
 
 def sample_population_size(n_min: int = 10, n_max: int = 100_000, num_time_windows: int = 20, seed: int = None) -> list[float]:
-    rng = np.random.default_rng(seed)  # Use a local random generator
+    """Sample a random piecewise-constant population-size trajectory.
+
+    Sizes are drawn as a smoothed random walk in log-space, bounded by
+    ``[n_min, n_max]``.
+
+    Parameters
+    ----------
+    n_min : int
+        Minimum effective population size.
+    n_max : int
+        Maximum effective population size.
+    num_time_windows : int
+        Number of epochs in the trajectory.
+    seed : int or None
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    sizes : list[float]
+        Population sizes for each epoch (linear scale).
+    """
+    rng = np.random.default_rng(seed)
     n_min_log = np.log(n_min)
     n_max_log = np.log(n_max)
     population_size = [rng.uniform(low=n_min_log, high=n_max_log)]
@@ -41,6 +62,25 @@ def sample_population_size(n_min: int = 10, n_max: int = 100_000, num_time_windo
     return np.exp(population_size).tolist()  
 
 def sample_demography(n_min=10_000, n_max=200_000, num_time_windows=20, seed=None):
+    """Build an msprime Demography with a random population-size history.
+
+    Parameters
+    ----------
+    n_min : int
+        Minimum effective population size passed to
+        :func:`sample_population_size`.
+    n_max : int
+        Maximum effective population size.
+    num_time_windows : int
+        Number of piecewise-constant epochs.
+    seed : int or None
+        Random seed forwarded to :func:`sample_population_size`.
+
+    Returns
+    -------
+    demography : msprime.Demography
+        Configured msprime demography object.
+    """
     time_steps = np.linspace(3, 14, num_time_windows)
     population_size = sample_population_size(n_min, n_max, num_time_windows, seed=seed)
     demography=msprime.Demography()
@@ -52,6 +92,21 @@ def sample_demography(n_min=10_000, n_max=200_000, num_time_windows=20, seed=Non
 
 
 class DemographyStorage:
+    """Pre-generated bank of 64 random demography / rate combinations.
+
+    Each combination pairs a demographic history (from
+    :func:`sample_demography`) with uniformly sampled mutation and
+    recombination rates.  Used by the simulation pipeline to ensure
+    reproducible, diverse training scenarios.
+
+    Parameters
+    ----------
+    mutation_rate_range : tuple[float, float]
+        ``(min, max)`` bounds for the per-bp mutation rate.
+    recombination_rate_range : tuple[float, float]
+        ``(min, max)`` bounds for the per-bp recombination rate.
+    """
+
     def __init__(self, mutation_rate_range=(1e-9, 1e-8), recombination_rate_range=(1e-9, 1e-8)):
         self.mutation_rate_range = mutation_rate_range
         self.recombination_rate_range = recombination_rate_range
@@ -97,12 +152,54 @@ def simulate_parameterized_tree_sequence(
         ploidy=2,
         mutation_rate=1.29e-8,
         demography=None,
-        island_demography=None, #msprime.Demography.island_model([10000, 5000, 5000], migration_rate=0.1)
+        island_demography=None,
         hard_sweep=None,
         random_scenario=None,
         selection_coefficient=None,
         selection_position=0.5e6
         ):
+    """Simulate a tree sequence under one of several demographic / selection models.
+
+    Exactly one of *demography*, *island_demography*, *hard_sweep*, or
+    *random_scenario* may be specified; the rest default to a
+    constant-size panmictic population.
+
+    Parameters
+    ----------
+    seed : int
+        Master random seed.
+    samples : int
+        Number of diploid samples.
+    population_size : float
+        Constant effective population size (ignored when a demography
+        object is supplied).
+    sequence_length : float
+        Genomic region length in bp.
+    recombination_rate : float
+        Per-bp per-generation recombination rate.
+    ploidy : int
+        Ploidy level (default 2).
+    mutation_rate : float
+        Per-bp per-generation mutation rate.
+    demography : msprime.Demography or None
+        Custom demography object.
+    island_demography : msprime.Demography or None
+        Structured (island-model) demography.
+    hard_sweep : bool or None
+        If truthy, simulate a hard selective sweep at *selection_position*.
+    random_scenario : int or None
+        1-based index into :class:`DemographyStorage` pre-generated
+        scenarios.
+    selection_coefficient : float or None
+        Selection coefficient *s* for hard-sweep simulations.
+    selection_position : float
+        Genomic position of the sweep (bp).
+
+    Returns
+    -------
+    ts : tskit.TreeSequence
+        Simulated tree sequence with mutations.
+    """
     np.random.seed(seed)
     SEED = np.random.uniform(1, 2**32 - 1)
 
@@ -288,6 +385,20 @@ def generate_causal_mask(seq_len, full_attention_n=None, device="cpu"):
 
 
 def create_sawtooth_demography(Ne=2e4, magnitude=4):
+    """Create a sawtooth (oscillating) demographic history.
+
+    Parameters
+    ----------
+    Ne : float
+        Baseline effective population size.
+    magnitude : float
+        Amplitude scaling factor for the oscillations.
+
+    Returns
+    -------
+    demography : msprime.Demography
+        msprime demography object encoding the sawtooth history.
+    """
     return create_sawtooth_demogaphy_object(Ne=Ne, magnitue=magnitude)
 
 
@@ -536,8 +647,27 @@ def stochastic_diversity_bias_correction_v2(
 
 
 def coalescence_rates(ancestor_times, time_windows, epsilon=1e-3):
-    """
-    Calculate pair coalescence rates given ancestor times in equal-sized windows.
+    """Estimate pairwise coalescence rates in time windows.
+
+    Bins ancestor times into the provided windows and estimates the
+    instantaneous coalescence rate in each interval from the empirical
+    survival function.
+
+    Parameters
+    ----------
+    ancestor_times : ndarray of shape ``(n_pairs,)``
+        Positive coalescence times for each pair.
+    time_windows : ndarray
+        Sorted window boundaries starting at 0.
+    epsilon : float
+        Survival-function threshold below which terminal-window
+        estimation switches to a mean-based estimator.
+
+    Returns
+    -------
+    rates : ndarray of shape ``(len(time_windows) - 1,)``
+        Estimated coalescence rate per window (NaN-padded where
+        data is insufficient).
     """
     assert np.all(np.diff(time_windows) > 0.0)
     assert time_windows[0] == 0.0

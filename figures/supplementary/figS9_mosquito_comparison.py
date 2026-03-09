@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
-from figures.paths import AG1000G_ACCESSIBILITY
+from figures.paths import AG1000G_ACCESSIBILITY, REVISION_MOSQUITO_CACHE
 
 
 POPULATIONS = ["BurkinaFaso", "Mali", "Cameroon", "Ghana", "Uganda"]
@@ -38,7 +38,7 @@ RDL_START = 25_363_652
 RDL_END = 25_434_556
 
 FIG7_CACHE = "figures/output/main/cache/fig7"
-REVISION_CACHE = "revision/figure_mosquito/cache"
+REVISION_CACHE = REVISION_MOSQUITO_CACHE
 
 POP_MAP_CXT = {
     "BurkinaFaso": "burkinafaso",

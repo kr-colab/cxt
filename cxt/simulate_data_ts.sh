@@ -1,7 +1,7 @@
 
 # base dataset
 
-base_dir=/sietch_colab/kkor/cxt/ts
+base_dir="${BASE_DIR:-./data/ts}"
 
 mkdir -p $base_dir
 mkdir -p ${base_dir}/llm

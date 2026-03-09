@@ -106,7 +106,7 @@ CLI reference
 Key arguments:
 
 - ``--model``: preset name (``narrow``, ``broad``, ``broad_w200``,
-  ``residual``, ``w200_wmissing``)
+  ``w200_wmissing``)
 - ``--dataset-path``: path to a preprocessed dataset (must contain
   ``train/`` and ``test/`` subdirectories)
 - ``--gpus``: GPU indices (e.g. ``0 1``)

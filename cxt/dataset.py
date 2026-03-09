@@ -24,6 +24,20 @@ TIMES = np.linspace(3, 17, GRID_SIZE)
 
 
 def discretize(sequence, grid):
+    """Map continuous values to the nearest lower grid index.
+
+    Parameters
+    ----------
+    sequence : array_like
+        Continuous values to discretise.
+    grid : array_like
+        Sorted grid boundaries.
+
+    Returns
+    -------
+    indices : ndarray
+        Integer indices into *grid*, clipped to ``[0, len(grid)-1]``.
+    """
     idx = np.searchsorted(grid, sequence, side="right") - 1
     np.clip(idx, 0, len(grid) - 1, out=idx)
     return idx
@@ -119,7 +133,22 @@ class PairDataset(Dataset):
 # ---------------------------------------------------------------------------
 
 class ShuffleBufferDataset(IterableDataset):
-    """Wrap any map-style dataset with a streaming shuffle buffer."""
+    """Wrap a map-style dataset with a streaming shuffle buffer.
+
+    Useful for distributed training where global shuffling is too
+    expensive.  Items are drawn from a reservoir of size *buffer_size*
+    and replaced with the next unvisited item, approximating a uniform
+    shuffle at the cost of one pass through the data.
+
+    Parameters
+    ----------
+    ds : Dataset
+        Underlying map-style dataset.
+    buffer_size : int
+        Maximum number of items held in the reservoir.
+    seed : int
+        Random seed for reproducibility.
+    """
 
     def __init__(self, ds: Dataset, buffer_size: int = 8192, seed: int = 1234):
         self.ds = ds

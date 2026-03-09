@@ -28,7 +28,7 @@ from figures.utils import plot_tmrca_scatter
 # Constants
 # -----------------------------------------------------------------------
 
-SINGER_BASE = "/sietch_colab/data_share/cxt/singer-benchmarks"
+from figures.paths import SINGER_BASE
 MCMC_REPS = np.arange(50, 100, 5)
 
 BIN_BP = 2000

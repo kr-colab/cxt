@@ -41,9 +41,32 @@ def diversity_bias_correction(
 ):
     """Additive log-space correction so E[diversity] matches observed.
 
+    Computes a single scalar shift per pivot pair that aligns the
+    expected pairwise diversity (from the predicted TMRCA landscape)
+    with the observed diversity in *tree_sequence*.
+
     Parameters
     ----------
-    predictions : array (replicates, pairs, windows) in log-TMRCA.
+    tree_sequence : tskit.TreeSequence
+        Input tree sequence (trimmed internally).
+    mutation_rate : float
+        Per-base-pair per-generation mutation rate.
+    predictions : ndarray of shape ``(n_reps, n_pairs, n_windows)``
+        Log-TMRCA predictions.
+    pivot_pairs : ndarray of shape ``(n_pairs, 2)``
+        Haploid sample index pairs.
+    zero_offset : float
+        Replacement for zero observed diversity.  If 0 (default),
+        the smallest non-zero diversity is used.
+    return_intercept : bool
+        Also return the log-intercept array.
+
+    Returns
+    -------
+    corrected : ndarray
+        Bias-corrected log-TMRCA predictions (same shape as *predictions*).
+    intercept : ndarray, optional
+        Only returned when *return_intercept* is True.
     """
     assert predictions.ndim == 3
     obs_div = tree_sequence.trim().diversity(sample_sets=pivot_pairs)
@@ -68,7 +91,33 @@ def diversity_bias_correction_by_rep(
     zero_offset: float = 0.0,
     return_intercept: bool = False,
 ):
-    """Per-replicate version of ``diversity_bias_correction``."""
+    """Per-replicate version of :func:`diversity_bias_correction`.
+
+    Instead of averaging over replicates before computing the shift,
+    each replicate receives its own correction factor.
+
+    Parameters
+    ----------
+    tree_sequence : tskit.TreeSequence
+        Input tree sequence (trimmed internally).
+    mutation_rate : float
+        Per-bp per-generation mutation rate.
+    predictions : ndarray of shape ``(n_reps, n_pairs, n_windows)``
+        Log-TMRCA predictions.
+    pivot_pairs : ndarray of shape ``(n_pairs, 2)``
+        Haploid sample index pairs.
+    zero_offset : float
+        Replacement for zero observed diversity.
+    return_intercept : bool
+        Also return the log-intercept array.
+
+    Returns
+    -------
+    corrected : ndarray
+        Corrected log-TMRCA (same shape as *predictions*).
+    intercept : ndarray, optional
+        Only when *return_intercept* is True.
+    """
     assert predictions.ndim == 3
     obs_div = tree_sequence.trim().diversity(sample_sets=pivot_pairs)
     obs_div[obs_div == 0] = (
@@ -101,8 +150,33 @@ def stochastic_diversity_bias_correction(
 ):
     r"""Stochastic correction via Gamma posterior on per-pair scaling.
 
-    Under the model, mutation_count ~ Poisson(2 * c * mu * sum_i TMRCA_i * w_i),
-    with posterior c ~ Gamma(mutation_count + 1, rate).
+    Under the model, ``mutation_count ~ Poisson(2 * c * mu * sum_i TMRCA_i * w_i)``,
+    with posterior ``c ~ Gamma(mutation_count + 1, rate)``.  A fresh
+    draw of *c* is sampled for every replicate and pivot pair, making
+    the correction stochastic (accounts for Poisson noise in the
+    observed mutation count).
+
+    Parameters
+    ----------
+    tree_sequence : tskit.TreeSequence
+        Input tree sequence (trimmed internally).
+    mutation_rate : float
+        Per-bp per-generation mutation rate.
+    predictions : ndarray of shape ``(n_reps, n_pairs, n_windows)``
+        Log-TMRCA predictions.
+    pivot_pairs : ndarray of shape ``(n_pairs, 2)``
+        Haploid sample index pairs.
+    return_intercept : bool
+        Also return the log-intercept array.
+    rng : numpy.random.Generator or None
+        Random generator (created internally if None).
+
+    Returns
+    -------
+    corrected : ndarray
+        Stochastically corrected log-TMRCA predictions.
+    intercept : ndarray, optional
+        Only when *return_intercept* is True.
     """
     assert predictions.ndim == 3
     if rng is None:
@@ -135,7 +209,45 @@ def stochastic_diversity_bias_correction_v2(
     availability_mask: np.ndarray | None = None,
     mask_missingness=None,
 ):
-    """Genotype-matrix variant (no tree sequence needed)."""
+    """Genotype-matrix variant of :func:`stochastic_diversity_bias_correction` (no tree sequence needed).
+
+    Computes the observed mutation count directly from the genotype
+    matrix rather than from a :class:`tskit.TreeSequence`, making it
+    usable on VCF or array-based inputs.
+
+    Parameters
+    ----------
+    genotype_matrix : ndarray of shape ``(n_samples, n_sites)``
+        Haploid genotype matrix.
+    mutation_rate : float
+        Per-bp per-generation mutation rate.
+    predictions : ndarray of shape ``(n_reps, n_pairs, n_windows)``
+        Log-TMRCA predictions.
+    pivot_pairs : ndarray of shape ``(n_pairs, 2)``
+        Haploid sample index pairs.
+    return_intercept : bool
+        Also return the log-intercept array.
+    rng : numpy.random.Generator or None
+        Random generator (created internally if None).
+    sequence_length : float
+        Total genomic region length in bp.
+    window_size : int
+        Step / window size in bp (used to compute available bp per
+        window).
+    availability_mask : ndarray or None
+        Per-window availability fraction (unused when *mask_missingness*
+        is provided).
+    mask_missingness : ndarray or None
+        Per-window missingness fraction.  When not None,
+        ``available_bp = (1 - mask_missingness) * window_size``.
+
+    Returns
+    -------
+    corrected : ndarray
+        Corrected log-TMRCA predictions.
+    intercept : ndarray, optional
+        Only when *return_intercept* is True.
+    """
     assert predictions.ndim == 3
     if rng is None:
         rng = np.random.default_rng()

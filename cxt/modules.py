@@ -40,6 +40,14 @@ class MutationsToLatentSpace(nn.Module):
 
 
 class MLP(nn.Module):
+    """Two-layer feed-forward network with GELU activation.
+
+    Parameters
+    ----------
+    config : ModelConfig
+        Must supply ``n_embd``, ``bias``, and ``dropout``.
+    """
+
     def __init__(self, config):
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
@@ -56,6 +64,16 @@ class MLP(nn.Module):
 
 
 class LayerNorm(nn.Module):
+    """Layer normalisation with optional bias (drop-in replacement for ``nn.LayerNorm``).
+
+    Parameters
+    ----------
+    ndim : int
+        Feature dimension.
+    use_bias : bool
+        Include a learnable bias term.
+    """
+
     def __init__(self, ndim: int, use_bias: bool = True):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
@@ -66,6 +84,17 @@ class LayerNorm(nn.Module):
 
 
 class CausalSelfAttention(nn.Module):
+    """Multi-head causal self-attention with rotary position embeddings and optional KV cache.
+
+    Parameters
+    ----------
+    config : ModelConfig
+        Must supply ``n_embd``, ``n_head``, ``bias``, ``dropout``,
+        ``use_kv_cache``, and ``batch_size``.
+    layer_idx : int
+        Layer index (stored for debugging / cache bookkeeping).
+    """
+
     def __init__(self, config, layer_idx: int):
         super().__init__()
         assert config.n_embd % config.n_head == 0
@@ -117,6 +146,17 @@ class CausalSelfAttention(nn.Module):
 
 
 class Block(nn.Module):
+    """Pre-norm transformer block (LayerNorm -> Attention -> LayerNorm -> MLP).
+
+    Parameters
+    ----------
+    config : ModelConfig
+        Passed through to :class:`CausalSelfAttention`, :class:`MLP`, and
+        :class:`LayerNorm`.
+    layer_idx : int
+        Layer index forwarded to :class:`CausalSelfAttention`.
+    """
+
     def __init__(self, config, layer_idx: int):
         super().__init__()
         self.ln_1 = LayerNorm(config.n_embd, use_bias=config.bias)
