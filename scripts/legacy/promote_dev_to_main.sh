@@ -68,7 +68,7 @@ echo "  ✓ dev merged"
 # ---- Step 3: Copy fresh checkpoints ----
 echo ""
 echo "Step 3: Installing fresh checkpoints from run_fresh.sh output"
-bash scripts/copy_checkpoints.sh "${FRESH_CKPT_DIR}"
+bash scripts/legacy/copy_checkpoints.sh "${FRESH_CKPT_DIR}"
 git add checkpoints/
 git commit -m "Add reproducible checkpoints from run_fresh.sh"
 echo "  ✓ Fresh checkpoints committed"

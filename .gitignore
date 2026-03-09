@@ -38,7 +38,7 @@ runs/
 *.log
 
 # ad-hoc helper scripts (not part of the reproducible pipeline)
-scripts/run_figures_early.sh
+scripts/legacy/run_figures_early.sh
 scripts/run_late.sh
 
 # vim

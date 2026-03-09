@@ -32,8 +32,8 @@ MODEL_CONFIGS = {
     "broad":       {"seq_len": 1_000_000, "samples": 25, "adapter": False},
     "narrow":      {"seq_len": 1_000_000, "samples": 25, "adapter": False},
     "residual":    {"seq_len": 1_000_000, "samples": 25, "adapter": False},
-    "broad_w200":  {"seq_len":   100_000, "samples": 25, "adapter": False},
-    "w200_wmissing":        {"seq_len": 100_000, "samples": 25, "adapter": False},
+    "broad_w200":  {"seq_len":   100_000, "samples": 25, "adapter": False, "Ne": 5e4},
+    "w200_wmissing":        {"seq_len": 100_000, "samples": 25, "adapter": False, "Ne": 5e4},
     "broad+adapter":        {"seq_len": 1_000_000, "samples": 5, "adapter": True},
     "w200_wmissing_adapter": {"seq_len": 100_000,  "samples": 5, "adapter": True},
 }
@@ -42,9 +42,10 @@ PIVOT_PAIRS_STANDARD = [(0, 1), (2, 3)]
 PIVOT_PAIRS_ADAPTER = [(0, 1), (2, 3)]
 
 
-def simulate_and_cache(samples, seq_len, seed=SEED):
+def simulate_and_cache(samples, seq_len, seed=SEED, Ne=2e4):
     ts = simulate_parameterized_tree_sequence(
         seed=seed, samples=samples, sequence_length=seq_len,
+        population_size=Ne,
     )
     return ts
 
@@ -61,10 +62,11 @@ def compute_true_tmrcas(ts, pairs, seq_len):
 def run_base_model(model_name, cfg):
     seq_len = cfg["seq_len"]
     samples = cfg["samples"]
+    Ne = cfg.get("Ne", 2e4)
     pairs = PIVOT_PAIRS_STANDARD
 
-    print(f"  Simulating ts (samples={samples}, seq_len={seq_len:,})...")
-    ts = simulate_and_cache(samples, seq_len)
+    print(f"  Simulating ts (samples={samples}, seq_len={seq_len:,}, Ne={Ne:.0f})...")
+    ts = simulate_and_cache(samples, seq_len, Ne=Ne)
 
     print(f"  Loading model...")
     model = load_model(model_name, device=DEVICE)
@@ -103,10 +105,11 @@ def run_base_model(model_name, cfg):
 def run_adapter_model(model_name, cfg):
     seq_len = cfg["seq_len"]
     samples = cfg["samples"]
+    Ne = cfg.get("Ne", 2e4)
     pairs = PIVOT_PAIRS_ADAPTER
 
-    print(f"  Simulating ts (samples={samples}, seq_len={seq_len:,})...")
-    ts = simulate_and_cache(samples, seq_len)
+    print(f"  Simulating ts (samples={samples}, seq_len={seq_len:,}, Ne={Ne:.0f})...")
+    ts = simulate_and_cache(samples, seq_len, Ne=Ne)
 
     print(f"  Loading adapter model...")
     wrapped = load_model(model_name, device=DEVICE)

@@ -2,9 +2,10 @@ Verification
 ============
 
 This page documents the verification tests that confirm every pretrained
-checkpoint produces correct TMRCA predictions on simulated data. The tests
-serve as both a sanity check after installation and a reference for expected
-accuracy across model variants.
+checkpoint produces correct TMRCA predictions. The simulated-data tests
+serve as a sanity check after installation and a reference for expected
+accuracy across model variants. The real-data test verifies the expected
+selective-sweep signal at the Rdl locus in Ag1000G mosquito data.
 
 All verification scripts live in ``.verification/`` at the repository root.
 Run them with:
@@ -13,6 +14,7 @@ Run them with:
 
    python .verification/verify_all_models.py    # all seven checkpoints
    python .verification/verify_input_types.py   # input-type consistency
+   python .verification/verify_rdl_5pops.py     # Rdl locus, 5 populations
 
 
 Test protocol
@@ -171,6 +173,47 @@ Tested on 100 kb with 5 diploid individuals.
    the coalescent-time landscape.
 
 
+Rdl locus — Ag1000G real-data verification
+------------------------------------------
+
+In addition to the simulated-data tests above, we verify the
+``w200_wmissing`` and ``w200_wmissing_adapter`` models on real data from
+the Ag1000G *Anopheles gambiae* dataset. The test runs cxt inference from
+scratch on the Rdl insecticide-resistance locus (25.1--25.6 Mb on chr2L)
+across five African populations: Mali, Burkina Faso, Cameroon, Uganda,
+and Ghana.
+
+The expected signal is a sharp TMRCA trough at the *Rdl* gene
+(25.36--25.43 Mb), consistent with a selective sweep driven by dieldrin
+resistance. The four larger populations (25 diploid individuals each)
+use the ``w200_wmissing`` model; Ghana (5 diploid individuals) uses the
+``w200_wmissing_adapter`` model. Each population is inferred using 25
+pairs from inversion-heterozygote (2La = 1) individuals.
+
+.. figure:: figures/verify_rdl_5pops.png
+   :align: center
+   :width: 100%
+
+   **Rdl locus verification.** Per-pair TMRCA traces (coloured lines)
+   and mean |pm| SD band across the Rdl region for all five Ag1000G
+   populations. The red shaded region marks the *Rdl* gene. Mali and
+   Burkina Faso show the strongest sweep signatures, with multiple
+   pairs dropping to :math:`\sim 10^{2}`--:math:`10^{3}` generations
+   at the locus. Cameroon and Ghana show clear sweeps in a subset of
+   pairs. Uganda shows a more subtle signal, consistent with lower
+   insecticide pressure in East Africa.
+
+.. code-block:: bash
+
+   python .verification/verify_rdl_5pops.py
+
+This test requires the Ag1000G chr2L tree sequence and accessibility
+mask (see :doc:`mosquito` for data setup). Population tree sequences
+are cached in ``.verification/cache_rdl/`` after the first run.
+Inference runs on just the five 100 kb blocks covering the Rdl region,
+taking approximately 8 minutes per population on a single GPU.
+
+
 Input-type consistency
 ----------------------
 
@@ -264,9 +307,14 @@ Running the verification
    # Verify input-type consistency (tree sequence vs genotype matrix vs VCF)
    python .verification/verify_input_types.py
 
+   # Verify Rdl locus on Ag1000G data (requires tree sequence + accessibility mask)
+   python .verification/verify_rdl_5pops.py
+
 Checkpoints are cached in ``.verification/checkpoints/`` and reused on
 subsequent runs. Set the ``CXT_CHECKPOINT_CACHE`` environment variable to
-redirect the cache.
+redirect the cache. The Rdl verification uses checkpoints from the
+``BASE_DIR`` path (default ``/sietch_colab/data_share/cxt_scratch``).
 
 
 .. |approx| unicode:: U+2248
+.. |pm| unicode:: U+00B1
