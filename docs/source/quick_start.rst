@@ -52,8 +52,8 @@ the true values from the simulated tree sequence.
    from concurrent.futures import ProcessPoolExecutor
 
    import cxt
-   from cxt.simulate import simulate_parameterized_tree_sequence
-   from cxt.preprocess import interpolate_tmrca_per_window_spanavg
+   from cxt.utils import simulate_parameterized_tree_sequence
+   from cxt.preprocess import interpolate_tmrcas
 
    # Simulate
    ts = simulate_parameterized_tree_sequence(seed=103370001)
@@ -78,8 +78,8 @@ the true values from the simulated tree sequence.
    # Compute true TMRCAs
    def _true(args):
        ts, a, b = args
-       return interpolate_tmrca_per_window_spanavg(
-           ts.simplify(samples=[a, b]), window_size=2000, sequence_length=1e6,
+       return interpolate_tmrcas(
+           ts, window_size=2000, sample_a=a, sample_b=b,
        )
 
    with ProcessPoolExecutor(max_workers=24) as ex:

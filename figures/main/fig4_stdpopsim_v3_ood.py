@@ -16,19 +16,21 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 from scipy.stats import gaussian_kde
 
-from cxt.api2 import translate
+import cxt
 from cxt.preprocess import interpolate_tmrcas
-from cxt.utils import TIMES, setup_cxt_model
+from cxt.utils import TIMES
 from figures.utils import STDPOPSIM_V3_PARAMS, simulate_segment
+
+
+def _interp_worker(args):
+    ts, a, b = args
+    return interpolate_tmrcas(ts, 2000, 1e6, a, b)
 
 
 def build_yhats_ytrues(ts, pivot_pairs, yhat_tmrca, max_workers=None):
     yhat_tmrca = np.exp(yhat_tmrca)
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
-        ytrues = list(ex.map(
-            lambda args: interpolate_tmrcas(args[0], 2000, 1e6, args[1], args[2]),
-            [(ts, a, b) for a, b in pivot_pairs],
-        ))
+        ytrues = list(ex.map(_interp_worker, [(ts, a, b) for a, b in pivot_pairs]))
     return np.log(yhat_tmrca), np.log(ytrues)
 
 
@@ -41,12 +43,19 @@ def kde_pdf(samples, grid, bw_method=None):
     if np.all(samples == samples[0]):
         loc = float(samples[0])
         pdf = np.exp(-0.5 * ((grid - loc) / (1e-6 + 0.01 * (np.ptp(grid) or 1.0))) ** 2)
-        pdf /= np.trapz(pdf, grid)
+        pdf /= np.trapezoid(pdf, grid)
         return pdf
     kde = gaussian_kde(samples, bw_method=bw_method)
     pdf = kde(grid)
-    area = np.trapz(pdf, grid)
+    area = np.trapezoid(pdf, grid)
     return pdf / area if area > 0 else pdf
+
+
+def kl_divergence(p_grid, q_grid, x_grid, eps=1e-12):
+    p, q = p_grid + eps, q_grid + eps
+    p /= np.trapezoid(p, x_grid)
+    q /= np.trapezoid(q, x_grid)
+    return float(np.trapezoid(p * (np.log(p) - np.log(q)), x_grid))
 
 
 def robust_grid(a, b, n=512, q_lo=0.005, q_hi=0.995):
@@ -91,7 +100,7 @@ def main():
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
 
-    model = setup_cxt_model(model_type="broad")
+    model = cxt.load_model("broad", device="cpu")
     pivot_pairs = [(i, j) for i in range(50) for j in range(i + 1, 50)]
     blocks = [(0, int(1e6))]
 
@@ -131,9 +140,8 @@ def main():
             continue
 
         mutation_rate = json.loads(ts.provenance(-1).record)["parameters"]["rate"]
-        tmrca, _ = translate(
-            input_data=ts, data_type="ts",
-            model=model, pivot_pairs=pivot_pairs,
+        tmrca, _ = cxt.translate(
+            ts, model, pivot_pairs=pivot_pairs,
             blocks=blocks, devices=args.devices,
             B_per_device=args.batch_size, B=args.batch_size,
             build_workers=24, mutation_rate=mutation_rate,
@@ -144,26 +152,30 @@ def main():
         tmrca_results.append((yhats, ytrues))
 
     # --- Plot KDEs ---
-    cols = min(len(tmrca_results), 6)
+    cols = min(len(tmrca_results), 4)
     n = len(tmrca_results)
     rows = int(np.ceil(n / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 2.2 * rows), squeeze=False)
+    fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 1.8 * rows), squeeze=False)
 
     for k in range(n):
         yhat, ytrue = tmrca_results[k]
         yhat = np.asarray(yhat.mean(0)).flatten()
         ytrue = np.asarray(ytrue).flatten()
+        mask = np.isfinite(yhat) & np.isfinite(ytrue)
+        yhat, ytrue = yhat[mask], ytrue[mask]
         ytrue = TIMES[discretize(ytrue)]
 
-        x = robust_grid(yhat, ytrue)
+        mse_val = float(np.mean((yhat - ytrue) ** 2))
+        x = robust_grid(yhat, ytrue, n=512)
         p_true = kde_pdf(ytrue, x)
         p_pred = kde_pdf(yhat, x)
+        kl_val = np.log10(kl_divergence(p_true, p_pred, x))
 
         r, c = k // cols, k % cols
         ax = axes[r, c]
-        ax.fill_between(x, p_true, alpha=0.3, color="black", label="True")
-        ax.plot(x, p_pred, "--", color="dodgerblue", label="cxt")
-        ax.set_ylim(0, None)
+        ax.plot(x, p_true, color="black", label="True KDE")
+        ax.plot(x, p_pred, color="dodgerblue", label="Pred KDE")
+        ax.set_ylim(0, 1.0)
         ax.set_xlim(0, 16.2)
         ax.grid(alpha=0.3)
         set_loge_power10_ticks(ax, 0, 16.2)
@@ -171,12 +183,19 @@ def main():
             f"{metadata_all[k]['species_name']}\n{metadata_all[k].get('id', '')}",
             loc="left",
         )
+        ax.text(0.98, 0.97, f"MSE = {mse_val:.3g}\nlog\u2081\u2080(KL) = {kl_val:.3g}",
+                ha="right", va="top", transform=ax.transAxes,
+                bbox=dict(boxstyle="round,pad=0.3", alpha=0.2))
         if k == 0:
             ax.legend(loc="best")
         if c == 0:
             ax.set_ylabel("Density")
+        else:
+            ax.tick_params(axis="y", labelleft=False)
         if r == rows - 1:
             ax.set_xlabel("TMRCA (generations)")
+        else:
+            ax.tick_params(axis="x", labelbottom=False)
 
     for j in range(n, rows * cols):
         axes[j // cols, j % cols].axis("off")

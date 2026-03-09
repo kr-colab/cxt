@@ -60,7 +60,7 @@ CLI reference
 Paper datasets
 --------------
 
-The following five preprocessed datasets are needed to reproduce all
+The following six preprocessed datasets are needed to reproduce all
 checkpoints used in the paper. Each corresponds to a different training
 regime.
 
@@ -69,13 +69,35 @@ regime.
    ``DATA_DIR`` refers to the directory containing simulated tree sequences
    (see :doc:`simulation`). ``DATA_DIR_LP`` is the same directory but may
    contain additional large-population simulations used for fine-tuning the
-   w200 variants.
+   w200 variants. In ``run_fresh.sh``, a ``ts_large_pop`` symlink tree is
+   created that links only the high-Ne stdpopsim species.
 
 
-1. ``processed`` -- base dataset (w2000)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+0. ``processed_narrow`` -- constant-only baseline (w2000)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Used to train: **narrow**, **broad**, **residual**
+Used to train: **narrow**
+
+Contains only the constant-:math:`N_e` scenario. This is a smaller dataset
+used for the 6-layer narrow model.
+
+.. code-block:: bash
+
+   python -m cxt.preprocess \
+       --base_dir ${DATA_DIR}/base_dataset \
+       --out_subdir processed_narrow \
+       --window_size 2000 \
+       --num_pairs 200 \
+       --train_ratio 0.9 \
+       --global_seed 12345 \
+       --num_workers 75 \
+       --skip_existing
+
+
+1. ``processed`` -- full base dataset (w2000)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Used to train: **broad**, **residual**
 
 .. code-block:: bash
 
@@ -191,6 +213,11 @@ Dataset summary
      - Pairs
      - Samples
      - Missingness
+   * - ``processed_narrow``
+     - 2,000 bp
+     - 200
+     - 50
+     - No (constant only)
    * - ``processed``
      - 2,000 bp
      - 200

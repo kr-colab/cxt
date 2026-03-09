@@ -164,12 +164,19 @@ def interpolate_tmrcas(
     sequence_length: Optional[int] = None,
     sample_a: int = 0,
     sample_b: int = 1,
+    interval_start: int = 0,
 ) -> np.ndarray:
     """
     Exact windowed averages of TMRCA for a given pair of samples across a tree sequence.
+
+    When the tree sequence covers a sub-region of a chromosome (e.g. simulated
+    with left/right coordinates), set *interval_start* to the genomic start
+    position so that windows align with the actual data.
     """
     if sequence_length is None:
-        sequence_length = int(ts.sequence_length)
+        interval_end = int(ts.sequence_length)
+    else:
+        interval_end = interval_start + int(sequence_length)
 
     lefts, rights, tmrcas = [], [], []
     for tree in ts.trees():
@@ -192,8 +199,8 @@ def interpolate_tmrcas(
 
     return interpolate_tmrca_per_window_spanavg(
         lefts, rights, vals,
-        interval_start=0,
-        interval_end=sequence_length,
+        interval_start=interval_start,
+        interval_end=interval_end,
         interval_size=window_size,
     )
 

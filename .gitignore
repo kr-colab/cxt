@@ -20,6 +20,9 @@ figures/**/__pycache__
 # revision
 revision/
 
+# final submission (separate repo)
+final_submission/
+
 # cxtprime prototype
 .cxtprime/
 cxtprime
@@ -32,7 +35,11 @@ scratch/
 
 # run artefacts
 runs/
-checkpoints/
+*.log
+
+# ad-hoc helper scripts (not part of the reproducible pipeline)
+scripts/run_figures_early.sh
+scripts/run_late.sh
 
 # vim
 *.swp

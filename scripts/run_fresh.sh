@@ -34,7 +34,7 @@ FIG_CACHE_SUPP="${BASE_DIR}/figures/output/supplementary/cache"
 # ---------------------------------------------------------------------------
 # Hardware — GPU 1,2 and 80 CPUs
 # ---------------------------------------------------------------------------
-GPUS="0 1 2"
+GPUS="0 1"
 SIM_WORKERS=80
 PREPROCESS_WORKERS=80
 TRAIN_WORKERS=16
@@ -49,6 +49,7 @@ export HG1KG_TSZ_DIR="${HG1KG_TSZ_DIR:-/sietch_colab/data_share/hg1kg/tsinfer-tr
 
 # Direct figure checkpoint loading to the new cache
 export CXT_CHECKPOINT_CACHE="${CKPT_CACHE}"
+export CUDA_VISIBLE_DEVICES="${GPUS// /,}"
 
 # ---------------------------------------------------------------------------
 cd "$(dirname "$0")/.."
@@ -371,38 +372,46 @@ do_train() {
     PROCESSED="${DATA_DIR}/processed"
     PROCESSED_NARROW="${DATA_DIR}/base_dataset/processed_narrow"
     PROCESSED_N10="${DATA_DIR}/processed_n10"
-    PROCESSED_SW="${DATA_DIR}/processed_small_window"
-    PROCESSED_SWM="${DATA_DIR}/processed_small_window_missing_data"
-    PROCESSED_SWM_N10="${DATA_DIR}/processed_small_window_missing_data_n10"
+    PROCESSED_SW="${DATA_DIR}/ts_large_pop/processed_small_window"
+    PROCESSED_SWM="${DATA_DIR}/ts_large_pop/processed_small_window_missing_data"
+    PROCESSED_SWM_N10="${DATA_DIR}/ts_large_pop/processed_small_window_missing_data_n10"
 
     mkdir -p "${CKPT_DIR}"
 
     # ---- From-scratch models ----
 
     # 1. narrow (6 layers, 6 epochs) — constant scenario only
-    touch "${CKPT_DIR}/.train_marker_narrow"
-    run_step "Train: narrow" \
-        python -m cxt.train \
-            --model narrow \
-            --dataset-path "${PROCESSED_NARROW}" \
-            --gpus ${GPUS} \
-            --epochs 6 \
-            --workers "${TRAIN_WORKERS}" \
-            --log-dir "${BASE_DIR}"
-    install_ckpt "narrow" "narrow_epoch=5-step=4692.ckpt"
+    if [ -f "${CKPT_CACHE}/narrow/narrow_epoch=5-step=4692.ckpt" ]; then
+        log "  Skipping narrow (checkpoint already exists)"
+    else
+        touch "${CKPT_DIR}/.train_marker_narrow"
+        run_step "Train: narrow" \
+            python -m cxt.train \
+                --model narrow \
+                --dataset-path "${PROCESSED_NARROW}" \
+                --gpus ${GPUS} \
+                --epochs 6 \
+                --workers "${TRAIN_WORKERS}" \
+                --log-dir "${BASE_DIR}"
+        install_ckpt "narrow" "narrow_epoch=5-step=4692.ckpt"
+    fi
 
     # 2. broad (10 layers, 2 epochs) — main backbone
-    touch "${CKPT_DIR}/.train_marker_broad"
-    run_step "Train: broad" \
-        python -m cxt.train \
-            --model broad \
-            --dataset-path "${PROCESSED}" \
-            --gpus ${GPUS} \
-            --epochs 2 \
-            --workers "${TRAIN_WORKERS}" \
-            --log-dir "${BASE_DIR}"
-    install_ckpt "broad" "broad_epoch=1-step=5280.ckpt"
     BROAD_CKPT="${CKPT_CACHE}/broad/broad_epoch=1-step=5280.ckpt"
+    if [ -f "${BROAD_CKPT}" ]; then
+        log "  Skipping broad (checkpoint already exists)"
+    else
+        touch "${CKPT_DIR}/.train_marker_broad"
+        run_step "Train: broad" \
+            python -m cxt.train \
+                --model broad \
+                --dataset-path "${PROCESSED}" \
+                --gpus ${GPUS} \
+                --epochs 2 \
+                --workers "${TRAIN_WORKERS}" \
+                --log-dir "${BASE_DIR}"
+        install_ckpt "broad" "broad_epoch=1-step=5280.ckpt"
+    fi
 
     # ---- Fine-tuned from broad ----
 
@@ -459,9 +468,12 @@ do_train() {
         W200_CKPT="${CKPT_CACHE}/w200_wmissing/w200_wmissing_epoch=1-step=944.ckpt"
     fi
 
-    # ---- Fine-tuned from w200_wmissing ----
+    # ---- w200_wmissing_adapter: resume from broad+adapter on w200 missingness data ----
+    # Two-stage training: broad+adapter learned the 10→50 mapping on w2000 data,
+    # now we resume on w200+bitmask data at low lr to adapt for missingness.
 
-    if [ -f "${W200_CKPT:-}" ]; then
+    BROAD_ADAPTER_CKPT="${CKPT_CACHE}/broad+adapter/broad_adapter_epoch=2-step=792.ckpt"
+    if [ -f "${BROAD_ADAPTER_CKPT}" ]; then
         # 7. w200_wmissing_adapter
         touch "${CKPT_DIR}/.train_marker_w200_wmissing_adapter"
         run_step "Train: w200_wmissing_adapter" \
@@ -469,11 +481,11 @@ do_train() {
                 --model w200_wmissing \
                 --adapter \
                 --adapter-samples 10 \
+                --resume-adapter "${BROAD_ADAPTER_CKPT}" \
                 --dataset-path "${PROCESSED_SWM_N10}" \
                 --gpus ${GPUS} \
                 --epochs 10 \
                 --lr 3e-5 \
-                --checkpoint "${W200_CKPT}" \
                 --workers "${TRAIN_WORKERS}" \
                 --log-dir "${BASE_DIR}"
         install_ckpt "w200_wmissing_adapter" "w200_wmissing_adapter_epoch=9-step=480.ckpt"

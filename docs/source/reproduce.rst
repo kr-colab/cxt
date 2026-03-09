@@ -23,7 +23,7 @@ Override with the ``BASE_DIR`` environment variable:
 
    BASE_DIR=/scratch/myuser/cxt_run ./scripts/run_fresh.sh
 
-The script uses GPUs 1 and 2 and 80 CPU workers by default. These are
+The script uses GPUs 0 and 1 and 80 CPU workers by default. These are
 configured at the top of the script. A ``uv`` virtualenv is created at
 ``BASE_DIR/.venv`` and reused on subsequent runs. To recreate it:
 
@@ -50,13 +50,13 @@ Pipeline overview
 
    ┌──────────────────────────────────────────────────────────────────────┐
    │                                                                      │
-   │  STAGE 1: SIMULATE        python -m cxt.simulate                    │
+   │  STAGE 1: SIMULATE      python cxt/simulation_ts_only.py            │
    │  ─────────────────                                                   │
-   │  35 scenarios (constant, sawtooth, island, LLM sweeps,              │
-   │  10 stdpopsim mammals, 13 stdpopsim other species)                  │
+   │  35+ scenarios (constant, sawtooth, island, LLM sweeps,             │
+   │  10 stdpopsim mammals, 15 stdpopsim other species)                  │
    │  → .trees files in DATA_DIR/                                        │
    │                                                                      │
-   │  STAGE 2: PREPROCESS      python -m cxt.preprocess                  │
+   │  STAGE 2: PREPROCESS    python -m cxt.preprocess                    │
    │  ──────────────────                                                  │
    │  6 preprocessed datasets:                                            │
    │    processed_narrow         (w2000, n50, 200 pairs, constant only)  │
@@ -67,17 +67,18 @@ Pipeline overview
    │    processed_small_window_missing_data_n10    (w200, n10, bitmask)  │
    │  → X.npy, y.npy, pairs.npy per simulation                          │
    │                                                                      │
-   │  STAGE 3: TRAIN           python -m cxt.train                       │
+   │  STAGE 3: TRAIN         python -m cxt.train                         │
    │  ──────────────                                                      │
-   │  6 checkpoints in dependency order:                                  │
+   │  7 checkpoints in dependency order:                                  │
    │    narrow           ← processed_narrow (constant only)              │
    │    broad            ← processed                                     │
    │    broad_w200       ← processed_small_window + broad ckpt           │
+   │    broad+adapter    ← processed_n10 + broad ckpt                    │
    │    w200_wmissing    ← processed_sw_missing + broad_w200 ckpt        │
-   │    broad+adapter    ← processed_n10 + broad ckpt                     │
-   │    w200_wmissing_adapter ← processed_sw_missing_n10 + w200_wmissing │
+   │    w200_wmissing_adapter ← processed_sw_missing_n10                 │
+   │                        + broad+adapter (--resume-adapter)           │
    │                                                                      │
-   │  STAGE 4: FIGURES         python -m figures.main.*                   │
+   │  STAGE 4: FIGURES       python -m figures.main.*                     │
    │  ────────────────                                                    │
    │  8 main figures (Fig 1-8) + 6 supplementary (S4, S5, S6, S9-S11)   │
    │  → figures/output/main/ and figures/output/supplementary/            │
@@ -114,7 +115,7 @@ Hardware and path settings are at the top of the script:
      - ``/sietch_colab/data_share/cxt_scratch``
    * - ``GPUS``
      - GPU indices for training and figures
-     - ``1 2``
+     - ``0 1``
    * - ``SIM_WORKERS``
      - Parallel workers for simulation
      - ``80``
@@ -157,7 +158,8 @@ Example: custom paths
 Simulation details
 ------------------
 
-Stage 1 runs 35 simulation batches across four categories:
+Stage 1 runs 35+ simulation batches across four categories (using
+``python cxt/simulation_ts_only.py``):
 
 **Base dataset** (3 scenarios):
 
@@ -204,16 +206,16 @@ Stage 1 runs 35 simulation batches across four categories:
 ``homsap``, ``homsap_map``, ``bostau``, ``canfam``, ``canfam_map``,
 ``pantro``, ``papanu``, ``papanu_map``, ``ponabe``, ``ponabe_map``
 
-**stdpopsim other species** (18 scenarios, 5--1,000 samples):
-``aedaeg``, ``anapla``, ``anocar``, ``anogam``, ``aratha``, ``aratha_map``,
-``caeele``, ``caeele_map``, ``dromel``, ``drosec``, ``gasacu``, ``helann``,
-``helmel``, ``apimel``, ``musmus``
+**stdpopsim other species** (15 scenarios, 5--1,000 samples):
+``aedaeg``, ``anapla``, ``anocar``, ``anogam``, ``apimel``, ``aratha``,
+``aratha_map``, ``caeele``, ``caeele_map``, ``dromel``, ``drosec``,
+``gasacu``, ``helann``, ``helmel``, ``musmus``
 
 
 Preprocessing details
 ---------------------
 
-Stage 2 creates five preprocessed datasets. See :doc:`preprocessing` for
+Stage 2 creates six preprocessed datasets. See :doc:`preprocessing` for
 the full schema. The datasets differ in window size, sample count, and
 whether a missingness bitmask is encoded:
 
@@ -261,7 +263,7 @@ whether a missingness bitmask is encoded:
 Training details
 ----------------
 
-Stage 3 trains six model checkpoints respecting the dependency chain.
+Stage 3 trains seven model checkpoints respecting the dependency chain.
 ``run_fresh.sh`` installs each checkpoint into ``BASE_DIR/checkpoints/``
 after training so that figure generation uses the freshly trained models.
 
@@ -314,7 +316,7 @@ Which model trains on which dataset:
      - 50
      - 200 + bitmask
    * - ``w200_wmissing_adapter``
-     - Yes ← ``w200_wmissing``
+     - Yes ← ``broad+adapter`` (``--resume-adapter``)
      - ``processed_small_window_missing_data_n10``
      - 13 high-Ne stdpopsim
      - w200

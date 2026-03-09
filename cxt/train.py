@@ -21,9 +21,11 @@ import torch.nn.functional as F
 import lightning as L
 from torch.utils.data import DataLoader
 
-from cxt.config import PRESETS, TrainingConfig
+from cxt.config import PRESETS, TrainingConfig, ModelConfig
 from cxt.model import TokenFreeDecoder
 from cxt.translate import generate_causal_mask
+
+torch.serialization.add_safe_globals([TrainingConfig, ModelConfig])
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +279,9 @@ def main():
                         help="Adapter input sample dimension (ie_new)")
     parser.add_argument("--adapter-bottleneck", type=int, default=32)
     parser.add_argument("--adapter-dropout", type=float, default=0.0)
+    parser.add_argument("--resume-adapter", type=str, default=None,
+                        help="Resume adapter training from a full LitAdapterDecoder checkpoint "
+                             "(loads backbone+adapter weights, not just backbone)")
     parser.add_argument("--log-dir", type=str, default=None,
                         help="Root directory for lightning_logs (default: cwd)")
 
@@ -312,16 +317,29 @@ def main():
 
     # Model
     if args.adapter:
-        ckpt_path = args.checkpoint
-        lit_model = LitAdapterDecoder(
-            gpt_config=model_cfg,
-            pretrained_ckpt=ckpt_path,
-            ie_new=args.adapter_samples,
-            adapter_bottleneck=args.adapter_bottleneck,
-            adapter_dropout=args.adapter_dropout,
-            new_mask_index=0,
-            training_config=train_cfg.__dict__,
-        )
+        if args.resume_adapter:
+            lit_model = LitAdapterDecoder.load_from_checkpoint(
+                args.resume_adapter,
+                gpt_config=model_cfg,
+                pretrained_ckpt="1",
+                ie_new=args.adapter_samples,
+                adapter_bottleneck=args.adapter_bottleneck,
+                adapter_dropout=args.adapter_dropout,
+                new_mask_index=0,
+                training_config=train_cfg.__dict__,
+            )
+            lit_model.model.backbone.transformer.bt2ls.config.mask_singletons = False
+        else:
+            ckpt_path = args.checkpoint
+            lit_model = LitAdapterDecoder(
+                gpt_config=model_cfg,
+                pretrained_ckpt=ckpt_path,
+                ie_new=args.adapter_samples,
+                adapter_bottleneck=args.adapter_bottleneck,
+                adapter_dropout=args.adapter_dropout,
+                new_mask_index=0,
+                training_config=train_cfg.__dict__,
+            )
     else:
         if args.checkpoint:
             lit_model = LitDecoder.load_from_checkpoint(

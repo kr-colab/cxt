@@ -123,17 +123,22 @@ python -m cxt.train --model broad --dataset-path /path/to/data --log-dir /path/t
 simulate → preprocess → train → figures
 ```
 
-1. **Simulate**: Generate tree sequences with `cxt.simulate`
+1. **Simulate**: Generate tree sequences with `cxt/simulation_ts_only.py`
 
    ```bash
-   python -m cxt.simulate --scenario constant --data-dir /path/to/raw \
-       --num-samples 10000 --num-processes 80 --save-trees
+   python cxt/simulation_ts_only.py --scenario constant --data_dir /path/to/raw \
+       --num_samples 10000 --num_processes 80
    ```
 
-   The `--save-trees` flag saves raw `.trees` files alongside the X/y
-   arrays, enabling downstream preprocessing.
+   Tree sequences (`.trees` files) are saved per scenario, enabling
+   downstream preprocessing.
 
 2. **Preprocess**: Convert tree sequences to training pairs with `cxt.preprocess`
+
+   ```bash
+   python -m cxt.preprocess --base_dir /path/to/raw --out_subdir processed \
+       --window_size 2000 --num_pairs 200 --num_workers 80 --skip_existing
+   ```
 
 3. **Train**: Run the unified training script above
 
@@ -143,7 +148,7 @@ A single script bootstraps a `uv` virtualenv and runs the entire pipeline
 (simulate → preprocess → train → figures) in an isolated directory:
 
 ```bash
-cd /home/kkor/cxt && ./scripts/run_fresh.sh 2>&1 | tee /sietch_colab/data_share/cxt_scratch/run.log
+./scripts/run_fresh.sh
 ```
 
 All outputs go to `/sietch_colab/data_share/cxt_scratch/` by default.
@@ -154,25 +159,26 @@ BASE_DIR=/scratch/myuser/cxt_run ./scripts/run_fresh.sh
 ```
 
 Run individual stages: `./scripts/run_fresh.sh simulate`, `preprocess`,
-`train`, or `figures`.
+`train`, or `figures`. Multiple stages can be combined:
+`./scripts/run_fresh.sh train figures`.
 
 ## Package structure
 
 ```
 cxt/
-├── __init__.py          # Public API: load_model, translate, PRESETS
-├── config.py            # ModelConfig, PRESETS, AdapterConfig, TrainingConfig
-├── model.py             # TokenFreeDecoder (transformer architecture)
-├── modules.py           # Attention, MLP, LayerNorm, MutationsToLatentSpace
-├── checkpoint.py        # Model loading, checkpoint download/cache
-├── translate.py         # Unified inference: translate(), generate(), multi-GPU
-├── sfs.py               # SFS computation, source building, filtering
-├── correction.py        # Diversity-based bias correction
-├── train.py             # Unified training script (Lightning)
-├── dataset.py           # PairDataset for training
-├── simulate.py          # Tree-sequence simulation (msprime + stdpopsim)
-├── preprocess.py        # TS -> training data conversion
-└── utils.py             # Grids, helpers, plotting
+├── __init__.py              # Public API: load_model, translate, PRESETS
+├── config.py                # ModelConfig, PRESETS, AdapterConfig, TrainingConfig
+├── model.py                 # TokenFreeDecoder (transformer architecture)
+├── modules.py               # Attention, MLP, LayerNorm, MutationsToLatentSpace
+├── checkpoint.py            # Model loading, checkpoint download/cache
+├── translate.py             # Unified inference: translate(), generate(), multi-GPU
+├── sfs.py                   # SFS computation, source building, filtering
+├── correction.py            # Diversity-based bias correction (deterministic + stochastic)
+├── train.py                 # Unified training script (Lightning)
+├── dataset.py               # PairDataset for training
+├── simulation_ts_only.py    # Tree-sequence simulation CLI (msprime + stdpopsim)
+├── preprocess.py            # TS → training data conversion
+└── utils.py                 # Grids, helpers, legacy simulation functions
 ```
 
 ## Configuration

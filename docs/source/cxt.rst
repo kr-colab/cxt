@@ -34,6 +34,14 @@ Inference
    :members: translate, translate_from_ts, translate_from_vcf, translate_from_genotype_matrix, vcf_parser, generate, multi_gpu_generate, to_log_times, generate_causal_mask
    :undoc-members:
 
+.. note::
+
+   ``translate()`` auto-detects the input type (tree sequence, VCF path,
+   or genotype matrix tuple) and dispatches to the appropriate backend.
+   When ``mutation_rate`` is provided, a per-block stochastic bias
+   correction is applied using
+   :func:`cxt.correction.stochastic_diversity_bias_correction_v2`.
+
 
 SFS Computation
 ---------------
@@ -47,7 +55,7 @@ Bias Correction
 ---------------
 
 .. automodule:: cxt.correction
-   :members:
+   :members: diversity_bias_correction, diversity_bias_correction_by_rep, stochastic_diversity_bias_correction, stochastic_diversity_bias_correction_v2
    :undoc-members:
 
 
@@ -82,9 +90,24 @@ Dataset
 Simulation
 ----------
 
-.. automodule:: cxt.simulate
-   :members: simulate_parameterized_tree_sequence, simulate_random_segment, create_sawtooth_demography, sample_demography, sample_population_size, DemographyStorage
-   :undoc-members:
+Simulation functions live in two modules:
+
+- ``cxt.utils`` contains ``simulate_parameterized_tree_sequence``,
+  ``create_sawtooth_demography``, ``sample_demography``,
+  ``sample_population_size``, and ``DemographyStorage``.
+- ``cxt.simulation_ts_only`` is the CLI entry point used by
+  ``run_fresh.sh`` (invoked as ``python cxt/simulation_ts_only.py``).
+
+.. autofunction:: cxt.utils.simulate_parameterized_tree_sequence
+
+.. autofunction:: cxt.utils.create_sawtooth_demography
+
+.. autofunction:: cxt.utils.sample_demography
+
+.. autofunction:: cxt.utils.sample_population_size
+
+.. autoclass:: cxt.utils.DemographyStorage
+   :members:
 
 
 Preprocessing

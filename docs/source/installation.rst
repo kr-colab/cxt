@@ -29,6 +29,14 @@ If you prefer to have checkpoints available offline via Git LFS:
    git lfs install
    git lfs pull
 
+Legacy (pre-reproduction) checkpoints are archived in ``checkpoints_legacy/``
+and can be loaded with:
+
+.. code-block:: python
+
+   model = cxt.load_model("broad", legacy=True)   # original checkpoint
+   model = cxt.load_model("residual", legacy=True) # only available as legacy
+
 Requirements
 ------------
 

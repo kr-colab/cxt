@@ -1,1 +1,2 @@
 checkpoints/**/*.ckpt filter=lfs diff=lfs merge=lfs -text
+checkpoints_legacy/**/*.ckpt filter=lfs diff=lfs merge=lfs -text

@@ -53,6 +53,10 @@ Model variants
      - ``PRESETS["broad"]``
      - 10
      - Main model, best overall accuracy
+   * - ``residual``
+     - ``PRESETS["residual"]``
+     - 10
+     - Predicts log-residuals from the population mean
    * - ``broad_w200``
      - ``PRESETS["broad_w200"]``
      - 10

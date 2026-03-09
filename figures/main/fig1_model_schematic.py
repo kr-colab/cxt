@@ -14,18 +14,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
-from cxt.api2 import translate
+import cxt
 from cxt.preprocess import interpolate_tmrcas
-from cxt.utils import setup_cxt_model, simulate_parameterized_tree_sequence, TIMES
+from cxt.utils import simulate_parameterized_tree_sequence
+from cxt.utils import TIMES
+
+
+def _interp_worker(args):
+    ts, a, b = args
+    return interpolate_tmrcas(ts, 2000, 1e6, a, b)
 
 
 def build_yhats_ytrues(ts, pivot_ids, yhat_tmrca, max_workers=None):
     yhat = np.exp(yhat_tmrca)
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
-        ytrues = list(ex.map(
-            lambda args: interpolate_tmrcas(args[0], 2000, 1e6, args[1], args[2]),
-            [(ts, a, b) for a, b in pivot_ids],
-        ))
+        ytrues = list(ex.map(_interp_worker, [(ts, a, b) for a, b in pivot_ids]))
     return yhat, ytrues
 
 
@@ -46,7 +49,7 @@ def main():
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
 
-    model = setup_cxt_model(model_type="narrow")
+    model = cxt.load_model("narrow", device="cpu")
 
     num_samples = 50
     pivot_pairs = [(i, j) for i in range(num_samples) for j in range(i + 1, num_samples)]
@@ -59,9 +62,8 @@ def main():
         data = np.load(cache_path)
         yhats, ytrues = data["yhats"], data["ytrues"]
     else:
-        yhat_tmrca, _ = translate(
-            input_data=ts, data_type="ts",
-            model=model, pivot_pairs=pivot_pairs,
+        yhat_tmrca, _ = cxt.translate(
+            ts, model, pivot_pairs=pivot_pairs,
             blocks=blocks, devices=args.devices,
             B_per_device=args.batch_size, B=args.batch_size,
             build_workers=8, mutation_rate=1.29e-08,

@@ -334,7 +334,8 @@ def analyze_ts_with_smcpp(
 
     data = np.load(npz_path)
     with open(model_json) as f:
-        N0 = float(json.load(f)["model"]["N0"])
+        model_dict = json.load(f)
+    N0 = float(model_dict["model"]["N0"])
 
     hs = data["hidden_states"].astype(float)
     site_key = [k for k in data.files if k.endswith("_sites")][0]
@@ -342,13 +343,46 @@ def analyze_ts_with_smcpp(
     sites = data[site_key].astype(float)
     gamma = data[gamma_key].astype(float)
 
+    # SMC++ posterior can produce all-NaN gamma for certain model
+    # parameterisations due to numerical underflow in the forward-backward
+    # algorithm.  A tiny shrinkage of the y-spline toward its mean nudges the
+    # parameters out of the degenerate region without materially changing the
+    # demographic fit.
+    if np.all(np.isnan(gamma)):
+        y_orig = model_dict["model"]["y"]
+        y_mean = float(np.mean(y_orig))
+        for shrink in (0.99, 0.98, 0.97, 0.96, 0.90):
+            y_adj = [y_mean + shrink * (yi - y_mean) for yi in y_orig]
+            model_dict["model"]["y"] = y_adj
+            perturbed_json = os.path.join(tmp_dir, "model.perturbed.json")
+            with open(perturbed_json, "w") as f:
+                json.dump(model_dict, f)
+            _run("posterior", os.path.basename(perturbed_json),
+                 os.path.basename(npz_path), os.path.basename(smc), cwd=tmp_dir)
+            data = np.load(npz_path)
+            gamma = data[gamma_key].astype(float)
+            if not np.all(np.isnan(gamma)):
+                hs = data["hidden_states"].astype(float)
+                sites = data[site_key].astype(float)
+                # Persist the working model so subsequent pairs use it too
+                shutil.copy(perturbed_json, model_json)
+                print(f"[smcpp] posterior NaN fixed with y-shrink={shrink}")
+                break
+
     n = min(len(sites), gamma.shape[1])
     sites = np.where(np.isfinite(sites[:n]) & (sites[:n] > 0), sites[:n], 1.0)
     gamma = gamma[:, :n]
 
     K = gamma.shape[0]
     hs_fin = hs[np.isfinite(hs)]
-    t_rep = hs_fin if len(hs_fin) == K else 0.5 * (hs_fin[:-1] + hs_fin[1:])[:K]
+    if len(hs_fin) == K + 1:
+        t_rep = 0.5 * (hs_fin[:-1] + hs_fin[1:])
+    elif len(hs_fin) == K:
+        t_rep = np.empty(K, dtype=float)
+        t_rep[:-1] = 0.5 * (hs_fin[:-1] + hs_fin[1:])
+        t_rep[-1] = hs_fin[-1] + 0.5 * (hs_fin[-1] - hs_fin[-2]) if K >= 2 else hs_fin[-1]
+    else:
+        t_rep = hs_fin[:K]
 
     tmrca_raw = (t_rep @ gamma).astype(float)
     bounds = np.concatenate(([0.0], np.cumsum(sites)))
@@ -471,7 +505,14 @@ def analyze_ts_with_smcpp_multi(
 
         K = gamma.shape[0]
         hs_fin = hs[np.isfinite(hs)]
-        t_rep = hs_fin if len(hs_fin) == K else 0.5 * (hs_fin[:-1] + hs_fin[1:])[:K]
+        if len(hs_fin) == K + 1:
+            t_rep = 0.5 * (hs_fin[:-1] + hs_fin[1:])
+        elif len(hs_fin) == K:
+            t_rep = np.empty(K, dtype=float)
+            t_rep[:-1] = 0.5 * (hs_fin[:-1] + hs_fin[1:])
+            t_rep[-1] = hs_fin[-1] + 0.5 * (hs_fin[-1] - hs_fin[-2]) if K >= 2 else hs_fin[-1]
+        else:
+            t_rep = hs_fin[:K]
         t_rep = 2.0 * N0 * np.asarray(t_rep, float)
 
         tmrca_raw = (t_rep @ gamma).astype(float)

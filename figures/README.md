@@ -8,7 +8,9 @@ Reproduction scripts for all figures in
 
 ```
 figures/
+├── paths.py                    Data path definitions (configurable via env vars)
 ├── utils.py                    Shared plotting, simulation, and SMC++ utilities
+├── run_all_figures.sh          Run all figures (quick, uses existing caches)
 ├── main/                       Main manuscript figures (1–8)
 │   ├── fig1_model_schematic.py
 │   ├── fig2_benchmark_comparison.py
@@ -40,8 +42,16 @@ From the repo root:
 ./figures/run_all_figures.sh
 ```
 
-Data paths are resolved from `figures/paths.py` (defaults match revision notebooks).
-Override via env: `AG1000G_DATA_DIR`, `HG1KG_TSZ_DIR`, `BENCHMARK_JSONL`
+### Fresh end-to-end run
+
+To generate figures from freshly trained models in an isolated directory:
+
+```bash
+./scripts/run_fresh.sh figures
+```
+
+This uses `CXT_CHECKPOINT_CACHE` to load checkpoints from the fresh run
+directory instead of the global cache.
 
 ### Run individual scripts
 
@@ -49,17 +59,34 @@ Override via env: `AG1000G_DATA_DIR`, `HG1KG_TSZ_DIR`, `BENCHMARK_JSONL`
 python -m figures.main.fig1_model_schematic --output-dir figures/output/main
 ```
 
-Most scripts accept `--output-dir` and `--cache-dir` arguments. Cache directories
-store intermediate simulation results (e.g. tree sequences, SMC++ outputs) so that
-expensive computations need not be repeated.
+Most scripts accept `--output-dir`, `--cache-dir`, and `--devices`
+arguments. Cache directories store intermediate results (simulations,
+TMRCA predictions) so that expensive GPU computations are not repeated.
+
+Data paths are resolved from `figures/paths.py` (defaults match the
+shared data paths). Override via env: `AG1000G_DATA_DIR`,
+`AG1000G_ACCESSIBILITY`, `HG1KG_TSZ_DIR`, `BENCHMARK_JSONL`.
 
 ## Dependencies
 
-- `cxt` (this package)
+- `cxt` (this package, uses `cxt.load_model`, `cxt.translate`, `cxt.correction`, `cxt.utils`)
 - `msprime`, `tskit`, `stdpopsim`
 - `numpy`, `matplotlib`, `scipy`
 - `torch`, `pytorch-lightning`
 - For SMC++ comparisons: `singularity` or `apptainer` with `docker://terhorst/smcpp:latest`
+
+## Checkpoint loading
+
+Figure scripts call `cxt.load_model()` which by default downloads
+pretrained checkpoints from GitHub to `~/.cache/cxt/checkpoints/`.
+
+To use locally trained checkpoints instead, set:
+
+```bash
+export CXT_CHECKPOINT_CACHE=/path/to/your/checkpoints
+```
+
+The `scripts/run_fresh.sh` script sets this automatically.
 
 ## Note on calibration experiments
 

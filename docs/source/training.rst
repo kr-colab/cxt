@@ -74,7 +74,7 @@ Which model trains on which dataset and whether it uses fine-tuning:
      - 50
      - 200 + bitmask
    * - ``w200_wmissing_adapter``
-     - Yes ← ``w200_wmissing``
+     - Yes ← ``broad+adapter`` (``--resume-adapter``)
      - ``processed_small_window_missing_data_n10``
      - 13 high-Ne stdpopsim
      - w200
@@ -99,6 +99,8 @@ CLI reference
        [--adapter] \
        [--adapter-samples <n>] \
        [--adapter-bottleneck <dim>] \
+       [--adapter-dropout <float>] \
+       [--resume-adapter <ckpt_path>] \
        [--log-dir <directory>]
 
 Key arguments:
@@ -111,6 +113,10 @@ Key arguments:
 - ``--checkpoint``: warm-start from checkpoint (for fine-tuning)
 - ``--adapter``: enable adapter training with frozen backbone
 - ``--adapter-samples``: adapter input dimension (sample count)
+- ``--resume-adapter``: resume adapter training from a full
+  ``LitAdapterDecoder`` checkpoint (loads both backbone and adapter
+  weights, not just the backbone). Used for two-stage adapter training
+  (e.g. training ``w200_wmissing_adapter`` from ``broad+adapter``).
 - ``--log-dir``: root directory for ``lightning_logs/`` (default: current
   working directory). Use this to redirect checkpoints and TensorBoard
   logs to an isolated directory.
@@ -126,7 +132,8 @@ actual directories.
 1. ``narrow``
 ^^^^^^^^^^^^^
 
-Trained from scratch. 6 layers, 6 epochs.
+Trained from scratch on the constant-\ :math:`N_e` dataset only. 6 layers,
+6 epochs.
 
 **Checkpoint:** ``narrow_epoch=5-step=4692.ckpt``
 
@@ -135,7 +142,7 @@ Trained from scratch. 6 layers, 6 epochs.
    python -m cxt.train \
        --model narrow \
        --dataset-path /path/to/base_dataset/processed_narrow \
-       --gpus 0 1 2 \
+       --gpus 0 1 \
        --epochs 6
 
 
@@ -219,8 +226,11 @@ Lightweight adapter on top of a frozen ``broad`` backbone. Trained on
 6. ``w200_wmissing_adapter``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Adapter on a frozen ``w200_wmissing`` backbone, trained on 10-sample
-missingness data.
+Two-stage adapter training: the ``broad+adapter`` checkpoint already
+learned the 10→50 sample mapping on w2000 data. The second stage resumes
+that adapter on w200 + bitmask data at low learning rate to adapt for
+missingness. The ``--resume-adapter`` flag loads the full
+``LitAdapterDecoder`` checkpoint (backbone + adapter weights).
 
 **Checkpoint:** ``w200_wmissing_adapter_epoch=9-step=480.ckpt``
 
@@ -230,11 +240,11 @@ missingness data.
        --model w200_wmissing \
        --adapter \
        --adapter-samples 10 \
+       --resume-adapter /path/to/broad_adapter_epoch=2-step=792.ckpt \
        --dataset-path /path/to/processed_small_window_missing_data_n10 \
        --gpus 0 1 2 \
        --epochs 10 \
-       --lr 3e-5 \
-       --checkpoint /path/to/w200_wmissing_epoch=1-step=944.ckpt
+       --lr 3e-5
 
 
 End-to-end summary
@@ -245,10 +255,11 @@ For reference, here is the full pipeline from simulation to checkpoints:
 .. code-block:: text
 
    ┌─────────────────────────────────────────────────────────────┐
-   │ 1. SIMULATE  (python -m cxt.simulate)                      │
+   │ 1. SIMULATE  (python cxt/simulation_ts_only.py)            │
    │    → base_dataset, ssd, idd, llm/*, stdpopsim/*            │
    │                                                             │
    │ 2. PREPROCESS  (python -m cxt.preprocess)                  │
+   │    → processed_narrow    (w2000, 50 samples, constant only)│
    │    → processed           (w2000, 50 samples, 200 pairs)    │
    │    → processed_n10       (w2000, 10 samples, 20 pairs)     │
    │    → processed_small_window           (w200, 50 samples)   │
@@ -259,10 +270,10 @@ For reference, here is the full pipeline from simulation to checkpoints:
    │    narrow           ← processed_narrow (constant only)     │
    │    broad            ← processed                            │
    │    broad_w200       ← processed_small_window + broad ckpt  │
-   │    w200_wmissing    ← processed_sw_missing + broad_w200    │
    │    broad+adapter    ← processed_n10 + broad ckpt           │
+   │    w200_wmissing    ← processed_sw_missing + broad_w200    │
    │    w200_wmissing_adapter ← processed_sw_missing_n10        │
-   │                           + w200_wmissing ckpt             │
+   │                           + broad+adapter (--resume-adapter)│
    └─────────────────────────────────────────────────────────────┘
 
 
@@ -323,3 +334,9 @@ Practical notes
 - **Adapter training** freezes the backbone and only updates the adapter
   module plus selected layer-norm and last-N transformer blocks
   (controlled by ``unfreeze_strategy="ln_lastN"``).
+
+- **Two-stage adapter training** (used for ``w200_wmissing_adapter``):
+  first train an adapter on w2000 data (``broad+adapter``), then resume
+  with ``--resume-adapter`` on w200 + bitmask data. This transfers the
+  learned sample-size mapping while adapting for missingness and smaller
+  windows.

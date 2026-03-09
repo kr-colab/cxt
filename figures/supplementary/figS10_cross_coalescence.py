@@ -14,9 +14,9 @@ import matplotlib.pyplot as plt
 import stdpopsim
 import tskit
 
-from cxt.api2 import translate
+import cxt
 from cxt.preprocess import interpolate_tmrcas
-from cxt.utils import coalescence_rates, setup_cxt_model
+from cxt.utils import coalescence_rates
 
 
 NUM_PAIRS = 25
@@ -56,16 +56,15 @@ def main():
     pivot_pairs = list(combinations(range(50), 2))
     blocks = [(int(i), int(i + 1e6)) for i in np.linspace(0, 9e6, 10)]
 
-    model = setup_cxt_model(model_type="broad")
+    model = cxt.load_model("broad", device="cpu")
 
     cache_path = os.path.join(args.cache_dir, "tmrca.npz")
     if os.path.exists(cache_path):
         data = np.load(cache_path)
         tmrca, index_map = data["tmrca"], data["index_map"]
     else:
-        tmrca, index_map = translate(
-            input_data=ts, data_type="ts",
-            model=model, pivot_pairs=pivot_pairs,
+        tmrca, index_map = cxt.translate(
+            ts, model, pivot_pairs=pivot_pairs,
             blocks=blocks, devices=args.devices,
             B_per_device=512, build_workers=36,
             mutation_rate=1.29e-8,
@@ -74,7 +73,7 @@ def main():
 
     ytrues = []
     for a, b in pivot_pairs:
-        ytrues.append(interpolate_tmrcas(ts, 2000, 10e6, a, b))
+        s_ids = ts.samples(); ytrues.append(interpolate_tmrcas(ts, 2000, 10e6, int(s_ids[a]), int(s_ids[b])))
     ytrues = np.array(ytrues)
 
     time_windows = np.logspace(2, np.log10(np.quantile(ts.nodes_time, 0.95)), NUM_TIME_WINDOWS)
@@ -118,7 +117,7 @@ def main():
 
         ax.set_xscale("log")
         ax.set_yscale("log")
-        ax.set_ylim(10e-7, 5e-5)
+        ax.set_ylim(10e-7, 5e-4)
         ax.set_xlabel("Time (Generations)")
         ax.set_title(f"OutOfAfrica_2T12 (Pivots {label})", loc="left")
         ax.grid(True)

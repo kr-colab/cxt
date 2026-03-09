@@ -32,7 +32,7 @@ Setup and imports
 
    import cxt
    from cxt.utils import coalescence_rates
-   from cxt.preprocess import interpolate_tmrca_per_window_spanavg
+   from cxt.preprocess import interpolate_tmrcas
 
    cache_dir = "./cache"
    os.makedirs(cache_dir, exist_ok=True)
@@ -90,9 +90,9 @@ We compute discretized true TMRCAs for all pairwise combinations among the
        for i in tqdm(range(num_pairs)):
            for j in range(i + 1, num_pairs):
                pivot_ids.append((i, j))
-               tmrca_ij = interpolate_tmrca_per_window_spanavg(
-                   ts.simplify(samples=[i, j]),
-                   window_size, sequence_length,
+               tmrca_ij = interpolate_tmrcas(
+                   ts, window_size=int(window_size),
+                   sample_a=i, sample_b=j,
                )
                true_tmrcas.append(tmrca_ij)
        true_tmrcas = np.array(true_tmrcas)
