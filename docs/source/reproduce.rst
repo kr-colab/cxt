@@ -69,7 +69,7 @@ Pipeline overview
    │                                                                      │
    │  STAGE 3: TRAIN         python -m cxt.train                         │
    │  ──────────────                                                      │
-   │  7 checkpoints in dependency order:                                  │
+   │  6 checkpoints in dependency order:                                  │
    │    narrow           ← processed_narrow (constant only)              │
    │    broad            ← processed                                     │
    │    broad_w200       ← processed_small_window + broad ckpt           │
@@ -263,7 +263,7 @@ whether a missingness bitmask is encoded:
 Training details
 ----------------
 
-Stage 3 trains seven model checkpoints respecting the dependency chain.
+Stage 3 trains six model checkpoints respecting the dependency chain.
 ``run_fresh.sh`` installs each checkpoint into ``BASE_DIR/checkpoints/``
 after training so that figure generation uses the freshly trained models.
 

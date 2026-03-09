@@ -9,17 +9,17 @@ exact commands that reproduce every checkpoint shipped with the package.
 Checkpoint dependency graph
 ---------------------------
 
-The six released checkpoints form a dependency chain. Models lower in the
-graph are fine-tuned from checkpoints higher up:
+The six released checkpoints form a dependency chain. Models lower in
+the graph are fine-tuned from checkpoints higher up:
 
 .. code-block:: text
 
    narrow  (from scratch on "processed_narrow" — constant only)
    broad  (from scratch on "processed")
      ├── broad+adapter  (adapter on "processed_n10", frozen broad backbone)
+     │     └── w200_wmissing_adapter  (--resume-adapter on "processed_small_window_missing_data_n10")
      └── broad_w200  (fine-tuned on "processed_small_window")
            └── w200_wmissing  (fine-tuned on "processed_small_window_missing_data")
-                 └── w200_wmissing_adapter  (adapter on "processed_small_window_missing_data_n10")
 
 
 Training data summary
@@ -109,7 +109,7 @@ Key arguments:
   ``residual``, ``w200_wmissing``)
 - ``--dataset-path``: path to a preprocessed dataset (must contain
   ``train/`` and ``test/`` subdirectories)
-- ``--gpus``: GPU indices (e.g. ``0 1 2``)
+- ``--gpus``: GPU indices (e.g. ``0 1``)
 - ``--checkpoint``: warm-start from checkpoint (for fine-tuning)
 - ``--adapter``: enable adapter training with frozen backbone
 - ``--adapter-samples``: adapter input dimension (sample count)
@@ -159,7 +159,7 @@ serves as the backbone for all downstream fine-tuning.
    python -m cxt.train \
        --model broad \
        --dataset-path /path/to/processed \
-       --gpus 0 1 2 \
+       --gpus 0 1 \
        --epochs 2
 
 
@@ -176,7 +176,7 @@ reduced learning rate.
    python -m cxt.train \
        --model broad_w200 \
        --dataset-path /path/to/processed_small_window \
-       --gpus 0 1 2 \
+       --gpus 0 1 \
        --epochs 2 \
        --lr 3e-5 \
        --checkpoint /path/to/broad_epoch=1-step=5280.ckpt
@@ -196,7 +196,7 @@ missingness. The ``w200_wmissing`` preset automatically sets
    python -m cxt.train \
        --model w200_wmissing \
        --dataset-path /path/to/processed_small_window_missing_data \
-       --gpus 0 1 2 \
+       --gpus 0 1 \
        --epochs 2 \
        --lr 3e-5 \
        --checkpoint /path/to/broad_w200_epoch=1-step=944.ckpt
@@ -218,7 +218,7 @@ Lightweight adapter on top of a frozen ``broad`` backbone. Trained on
        --adapter \
        --adapter-samples 10 \
        --dataset-path /path/to/processed_n10 \
-       --gpus 0 1 2 \
+       --gpus 0 1 \
        --epochs 3 \
        --checkpoint /path/to/broad_epoch=1-step=5280.ckpt
 
@@ -242,7 +242,7 @@ missingness. The ``--resume-adapter`` flag loads the full
        --adapter-samples 10 \
        --resume-adapter /path/to/broad_adapter_epoch=2-step=792.ckpt \
        --dataset-path /path/to/processed_small_window_missing_data_n10 \
-       --gpus 0 1 2 \
+       --gpus 0 1 \
        --epochs 10 \
        --lr 3e-5
 
@@ -329,7 +329,7 @@ Practical notes
 - **KV cache** is disabled during training and enabled automatically at
   inference via :func:`cxt.load_model`.
 
-- **Multi-GPU** training uses DDP. ``--gpus 0 1 2`` selects GPUs by index.
+- **Multi-GPU** training uses DDP. ``--gpus 0 1`` selects GPUs by index.
 
 - **Adapter training** freezes the backbone and only updates the adapter
   module plus selected layer-norm and last-N transformer blocks
