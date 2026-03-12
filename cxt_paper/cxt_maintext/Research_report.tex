@@ -4,6 +4,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{dblfloatfix}
 \usepackage{xspace}
+\usepackage{placeins}
 \setcounter{secnumdepth}{0}
 
 \title{Coalescence and Translation: A Language Model for Population Genetics}
@@ -64,6 +65,8 @@ highlighting the model's ability to deal with the complexities of empirical data
 
 \maketitle
 \thispagestyle{firststyle}
+\setcounter{dbltopnumber}{1}
+\renewcommand{\dbltopfraction}{0.75}
 \ifthenelse{\boolean{shortarticle}}{\ifthenelse{\boolean{singlecolumn}}{\abscontentformatted}{\abscontent}}{}
 
 \Firstpage
@@ -227,6 +230,22 @@ Averaging across replicates produces stable estimates.
 In this well-specified setting \cxtkit is highly accurate,
 and inference for all pairs completes in approximately five minutes on a single NVIDIA A100 GPU.
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure1.pdf}
+\caption{$\cxtkit$ introduces the notation of \textit{next-coalescence prediction}
+(left). \cxtkit{} is a language model that conditions on a chosen ``pivot'' haplotype pair and
+predicts the pair's time to the most recent common ancestor (TMRCA) for each window.
+\cxtkit ingests mutational tensors constructed using the pivot pair and site--frequency--spectrum (SFS) values
+computed in windows across a focal region.
+The model works autoregressively: after each window is predicted,
+that estimate is appended to the context and supplied to the next step,
+yielding a step-wise reconstruction of the entire pairwise coalescent history.
+Because every haplotype pair can be processed in parallel, the approach scales efficiently with available GPU memory.
+In the example application (right), all $\binom{50}{2}$ pairwise coalescence curves for a sample of 50 haplotypes were inferred simultaneously in under five minutes on a single NVIDIA~A100 GPU.
+True TMRCAs are plotted in black, individual replicate predictions in light blue, and the prediction mean in dark blue.}
+\label{fig:schematic}
+\end{figure*}
 
 \subsection*{Benchmark Comparisons}
 
@@ -279,7 +298,15 @@ Our results demonstrate that the language modeling approach implemented in \cxtk
 the most recent theory-driven methods, whether ARG-based (as in \singer) or SMC-based (as in \smcpp), in these well-specified settings.
 A full summary of error estimates is provided in SI Appendix, Table~S6 and Figure~2.
 
-
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure2.pdf}
+\caption{True versus predicted coalescence times for three inference approaches across two demographic
+scenarios: a constant population size and a fluctuating ``sawtooth'' demography.
+Top row: \texttt{cxt-narrow} evaluated on the constant-size scenario (left) and on the sawtooth scenario (middle), followed by \texttt{cxt-broad} evaluated on the sawtooth scenario (right). The broad model\textemdash trained on a wider range of demographic histories\textemdash achieves substantially improved accuracy.
+Bottom row: \texttt{Singer+Polegon} evaluated on the constant-size (left) and sawtooth (middle) scenarios. The two rightmost panels show \smcpp{} applied to the constant-size and sawtooth scenarios, respectively. Although \smcpp{} is primarily designed for population-size inference, we include its decoding-based coalescence-time estimates for completeness. Mean squared errors (MSE) for each panel are reported within the plots.}
+\label{fig:benchmark}
+\end{figure*}
 
 
 
@@ -358,6 +385,14 @@ Notably, \cxtkit generalizes well, even when applied to simulations generated un
 of recombination and mutation rates, population sizes and demographic structure.
 Across these v0.3 species, \cxtkit generalizes reasonably well, although \texttt{Singer+Polegon} achieves lower error in most scenarios, in some cases by a substantial margin. Both methods substantially outperform the \smcpp decodings.
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure4.pdf}
+\caption{Out-of-sample evaluation of the broad model on \stdpopsim v0.3. Each panel shows inferred marginal coalescence distributions (dashed) against true distributions (shaded).
+We simulated data from the novel species / demographic histories added in \stdpopsim v0.3, aggregating pairwise inferences into kernel density plots.
+All results are from simulations previously unseen during training (Top Rows: \cxtkit; Middle Rows: \texttt{Singer+Polegon}; Bottom Rows: \smcpp).}
+\label{fig:stdpopsim_v3}
+\end{figure*}
 
 
 \subsection*{Generalization across parameter regimes}
@@ -393,6 +428,17 @@ To evaluate our ability to recover effective population size trajectories from \
 we simulated data under demographic models for \emph{H.~sapiens}, \emph{B.~taurus}, and \emph{A.~thaliana}. From these simulations, we estimated pairwise coalescence-time distributions 
 and converted them into coalescence-rate curves,
 which we then mapped to estimates of historical effective population size (Figure~4; see Methods).
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure5_demography.pdf}
+\caption{Inverse-instantaneous coalescence rate calculation for the piecewise-constant demography of
+\textit{H. sapiens} (left), \textit{A. thaliana} (middle) and \textit{B. taurus} (right).
+The inference of pairwise-coalescence events leads to the implicit inference of demography estimates
+through the marginal coalescence distribution assuming coalescence occurs as a Poisson process (see Materials and Methods).
+For each scenario 10 Mb and 25 diploid samples have been used to achieve resolution throughout the specified time-windows.}
+\label{fig:demography}
+\end{figure*}
 
 Figure~4 shows five curves.
 The black \emph{expectation} line reflects the true coalescence rate implied by the generative model.
@@ -473,6 +519,13 @@ As an additional validation,
 we compared inferred TMRCAs against the number of recombination events predicted by \cxtkit (SI Appendix, Fig.~S15),
 recovering the expected inverse relationship between genealogical age and segment length.
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure6.pdf}\\[1ex]
+\includegraphics[width=\linewidth]{figures/figure6_zoom.pdf}
+\caption{Inference of coalescent times from 25 focal pairs of British individuals of the 1000 Genomes project. The top panel shows chromosome-wide TMRCA landscapes for chromosomes~2 (left) and~6 (right). The bottom panel zooms into the LCT region on chromosome~2 (left) and the HLA region on chromosome~6 (right). Each pivot pair has been inferred 15 times to get a reliable mean, median and variance estimates. Additionally, light blue lines show the respective inferences of the 25 pairs.}
+\label{fig:human1kg}
+\end{figure*}
 
 The bottom panels in Figure~5
 zoom in on two canonical regions: 
@@ -503,6 +556,15 @@ The challenges outlined above are particularly acute here;
 high $N_e$-scaled rates substantially slow MCMC-based approaches such as \texttt{Singer+Polegon}.
 For readability, we show only \cxtkit results in the main text (Figure~6; see also SI Appendix, Fig.~S13);
 full method comparisons appear in SI Appendix, Fig.~S14.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure8.pdf}
+\caption{Coalescent-time structure across the \emph{In(2L)a} inversion on chr2L.
+Top: mean TMRCA summaries for an outside background region (10--20~Mb), the full inversion core interval, and two interior 0.5~Mb windows positioned 1~Mb inside each breakpoint (mean $\pm$ s.e.m.\ across replicate trajectories; ``All'' aggregates populations).
+Bottom: genome-wide mean TMRCA curves shown per population and pooled (``All''), with vertical guides marking inversion boundaries, breakpoint-adjacent windows, and the interior sampling windows used for summary statistics.}
+\label{fig:inversion}
+\end{figure*}
 
 To address these issues,
 we fine-tuned \cxtkit on a filtered \texttt{stdpopsim} training set restricted to $N_e > 10^5$,
@@ -890,17 +952,12 @@ We use a translation-aware fused-causal mask so coalescence predictions attend t
 
 
 \subsection*{Environmental Considerations}
-Although GPUs typically draw more instantaneous power than CPUs 
-(e.g., ~250–400 W for an NVIDIA A100 versus ~225 W for a high-end server CPU such as the AMD EPYC 7742),
-they can substantially reduce wall-clock time for inference workloads 
-(distinct from training, which requires on the order of 10 h on three A100s) 
-that map well to highly parallel operations. 
-This is particularly relevant for our amortized inference setting, 
-where recombination-rate variation does not affect runtime, 
-unlike in full-likelihood methods such as Singer. 
-In practice, GPU acceleration can markedly shorten runtime in certain parameter regimes, especially large Ne-scaled scenarios, so that even with a higher power draw, 
-the total energy use and $CO_{2}$ emissions per completed inference may be lower than on CPUs,
-simply because the task finishes much faster.
+Although GPUs typically draw more instantaneous power than CPUs
+(e.g., ${\sim}$250--400\,W for an NVIDIA A100 versus ${\sim}$225\,W for a high-end server CPU),
+they substantially reduce wall-clock time for the parallel inference workloads used by \cxtkit
+(training requires on the order of 10~h on three A100s).
+Because amortized inference is insensitive to recombination-rate variation,
+GPU acceleration can reduce total energy use and $CO_{2}$ emissions relative to CPU-based likelihood methods, particularly in large-$N_e$ regimes.
 
 }
 
@@ -914,47 +971,5 @@ simply because the task finishes much faster.
 
 
 \bibliography{cxt}
-
-\newpage
-\section*{Figure Legends}
-
-\textbf{Figure 1.}
-$\cxtkit$ introduces the notation of \textit{next-coalescence prediction}
-(Left). \cxtkit{} is a language model that conditions on a chosen ``pivot'' haplotype pair and
-predicts the pair's time to the most recent common ancestor (TMRCA) for each window.
-\cxtkit ingests mutational tensors constructed using the pivot pair and site--frequency--spectrum (SFS) values
-computed in windows across a focal region.
-The model works autoregressively: after each window is predicted,
-that estimate is appended to the context and supplied to the next step,
-yielding a step-wise reconstruction of the entire pairwise coalescent history.
-Because every haplotype pair can be processed in parallel, the approach scales efficiently with available GPU memory.
-In the right panel all $\binom{50}{2}$ pairwise coalescence curves for a sample of 50 haplotypes were inferred simultaneously in under five minutes on a single NVIDIA~A100 GPU.
-True TMRCAs are plotted in black, individual replicate predictions in light blue, and the prediction mean in dark blue.
-
-\textbf{Figure 2.}
-True versus predicted coalescence times for three inference approaches across two demographic
-scenarios: a constant population size and a fluctuating ``sawtooth'' demography.
-Top row: \texttt{cxt-narrow} evaluated on the constant-size scenario (left) and on the sawtooth scenario (middle), followed by \texttt{cxt-broad} evaluated on the sawtooth scenario (right). The broad model\textemdash trained on a wider range of demographic histories\textemdash achieves substantially improved accuracy.
-Bottom row: \texttt{Singer+Polegon} evaluated on the constant-size (left) and sawtooth (middle) scenarios. The two rightmost panels show \smcpp{} applied to the constant-size and sawtooth scenarios, respectively. Although \smcpp{} is primarily designed for population-size inference, we include its decoding-based coalescence-time estimates for completeness. Mean squared errors (MSE) for each panel are reported within the plots.
-
-\textbf{Figure 3.}
-Out-of-sample evaluation of the broad model on \stdpopsim v0.3. Each panel shows inferred marginal coalescence distributions (dashed) against true distributions (shaded).
-We simulated data from the novel species / demographic histories added in \stdpopsim v0.3, aggregating pairwise inferences into kernel density plots.
-All results are from simulations previously unseen during training (Top Rows: \cxtkit; Middle Rows: \texttt{Singer+Polegon}; Bottom Rows: \smcpp).
-
-\textbf{Figure 4.}
-Inverse-instantaneous coalescence rate calculation for the piecewise-constant demography of
-\textit{H. sapiens} (left), \textit{A. thaliana} (middle) and \textit{B. taurus} (right).
-The inference of pairwise-coalescence events leads to the implicit inference of demography estimates
-through the marginal coalescence distribution assuming coalescence occurs as a Poisson process (see methods).
-For each scenario 10 Mb and 25 diploid samples have been used to achieve resolution throughout the specified time-windows.
-
-\textbf{Figure 5.}
-Inference of coalescent times from 25 focal pairs of British individuals of the 1000 Genomes project. The top panel shows chromosome-wide TMRCA landscapes for chromosomes~2 (left) and~6 (right). The bottom panel zooms into the LCT region on chromosome~2 (left) and the HLA region on chromosome~6 (right). Each pivot pair has been inferred 15 times to get a reliable mean, median and variance estimates. Additionally, light blue lines show the respective inferences of the 25 pairs.
-
-\textbf{Figure 6.}
-Coalescent-time structure across the \emph{In(2L)a} inversion on chr2L.
-Top: mean TMRCA summaries for an outside background region (10--20~Mb), the full inversion core interval, and two interior 0.5~Mb windows positioned 1~Mb inside each breakpoint (mean $\pm$ s.e.m.\ across replicate trajectories; ``All'' aggregates populations).
-Bottom: genome-wide mean TMRCA curves shown per population and pooled (``All''), with vertical guides marking inversion boundaries, breakpoint-adjacent windows, and the interior sampling windows used for summary statistics.
 
 \end{document}

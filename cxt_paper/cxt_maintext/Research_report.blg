@@ -1,0 +1,53 @@
+This is BibTeX, Version 0.99d (TeX Live 2022/dev/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: Research_report.aux
+The style file: pnas-new.bst
+Database file #1: cxt.bib
+Warning--empty volume in gower2025accessible
+Warning--empty volume in terhorst_accelerated_2024
+Warning--empty volume in min2025neural
+Warning--empty title in Radford2018ImprovingLU
+Warning--empty volume in brixi2025genome
+Warning--empty title in radford_language_2019
+You've used 71 entries,
+            1916 wiz_defined-function locations,
+            937 strings with 19264 characters,
+and the built_in function-call counts, 17205 in all, are:
+= -- 1684
+> -- 776
+< -- 6
++ -- 236
+- -- 165
+* -- 1425
+:= -- 2578
+add.period$ -- 138
+call.type$ -- 71
+change.case$ -- 71
+chr.to.int$ -- 0
+cite$ -- 77
+duplicate$ -- 730
+empty$ -- 1531
+format.name$ -- 165
+if$ -- 3846
+int.to.chr$ -- 0
+int.to.str$ -- 71
+missing$ -- 67
+newline$ -- 283
+num.names$ -- 71
+pop$ -- 133
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 416
+stack$ -- 0
+substring$ -- 1549
+swap$ -- 157
+text.length$ -- 6
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 6
+while$ -- 176
+width$ -- 73
+write$ -- 697
+(There were 6 warnings)
