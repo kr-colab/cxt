@@ -1,5 +1,20 @@
 \begin{thebibliography}{10}
 
+\bibitem{adrion2020community}
+J.~R. Adrion, et~al., A community-maintained standard library of population
+  genetic models.
+\newblock {\em\protect\JournalTitle{eLife}} \textbf{9}, e54967 (2020).
+
+\bibitem{gower2023expanding}
+M.~E. Lauterbur, et~al., Expanding the stdpopsim species catalog, and lessons
+  learned for realistic genome simulations.
+\newblock {\em\protect\JournalTitle{eLife}} \textbf{12}, e84874 (2023).
+
+\bibitem{gower2025accessible}
+G. Gower, N.~S. Pope, M.~F. Rodrigues, , et~al., Accessible, realistic genome
+  simulation with selection using stdpopsim.
+\newblock {\em\protect\JournalTitle{bioRxiv}} (2025).
+
 \bibitem{kingman_coalescent_1982}
 J. Kingman, The coalescent.
 \newblock {\em\protect\JournalTitle{Stochastic Process. Appl.}} \textbf{13},
@@ -41,7 +56,9 @@ B.~C. Zhang, A. Biddanda, {\'{A}}.~F. Gunnarsson, F. Cooper, P.~F. Palamara,
 
 \bibitem{deng_robust_2024}
 Y. Deng, R. Nielsen, Y.~S. Song, Robust and accurate {Bayesian} inference of
-  genome-wide genealogies for large samples (2024).
+  genome-wide genealogies for hundreds of genomes.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{57}, 2124--2135
+  (2025).
 
 \bibitem{griffiths_ancestral_1996}
 R. Griffiths, P. Marjoram, Ancestral inference from samples of {DNA} sequences
@@ -347,6 +364,11 @@ R. Elliott, V. Ramakrishna, Insecticide resistance in {Anopheles} gambiae
 G. Davidson, J. Hamon, A case of dominant dieldrin resistance in {Anopheles}
   gambiae {Giles}.
 \newblock {\em\protect\JournalTitle{Nature}} \textbf{196}, 1012--1012 (1962).
+
+\bibitem{baumdicker2022efficient}
+F. Baumdicker, et~al., Efficient ancestry and mutation simulation with msprime
+  1.0.
+\newblock {\em\protect\JournalTitle{Genetics}} \textbf{220}, iyab229 (2022).
 
 \bibitem{radford_language_2019}
 A. Radford, et~al., Language models are unsupervised multitask learners.

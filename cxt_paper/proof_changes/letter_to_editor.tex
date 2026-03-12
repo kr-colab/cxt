@@ -62,8 +62,8 @@ and addressing reviewers 2 clarification requests.
 %% ---------------------------------------------------------------
 \section*{\textcolor{accent}{1. Formatting \& Text Shortenings}}
 
-We reformatted the manuscript to PNAS requests and made the following changes to the text:
-The scientific content is fully preserved to was just done to fit the page limit.
+We reformatted the manuscript to PNAS requests and made the following changes to the text in order to fit within the page limit:
+
 
 \subsection*{\small 1a. Transformer / GPT introduction}
 \begin{mdframed}[style=diffbox]
@@ -116,9 +116,9 @@ The scientific content is fully preserved to was just done to fit the page limit
 %% ---------------------------------------------------------------
 \section*{\textcolor{accent}{2. Updated Benchmark Numbers (Figures 2 \& 6)}}
 
-Some MSE values were recomputed after providing now a single script which reproduces the entire paper. This lead to the identification of a minor bookkeeping error in the seeds of the post-hoc correction approach; no qualitative conclusion is affected. Consolidating the pipeline into a single script also introduced minor seed-level differences that propagate to the Singer+Polegon and SMC++ numbers, though the changes are negligible.
+Some MSE values were recomputed after we consolidated the analysis into a single script that reproduces the entire paper. This led to the identification of a minor bookkeeping error in the seeds used for the post hoc correction approach; no qualitative conclusions are affected. Consolidating the pipeline into a single script also introduced minor seed-level differences that propagate to the Singer+Polegon and SMC++ results, although these changes are negligible.
 
-The same seed fix also affects the bias-correction step applied to the empirical mosquito TMRCA estimates (Figure~6 and the corresponding in-text summary statistics for the \emph{In(2L)a} inversion regions). The corrected random-number-generator state now advances independently across genomic blocks rather than resetting to a fixed value per block, yielding slightly higher absolute TMRCA values (roughly 20\% in low-TMRCA regions) with tighter cross-population standard deviations. The qualitative pattern (outside $<$ core $<$ inversion interior) is unchanged, and all conclusions regarding the inversion's genealogical signal remain the same.
+The same seed fix also affects the bias-correction step applied to the empirical mosquito TMRCA estimates (Figure~6 and the corresponding in-text summary statistics for the \emph{In(2L)a} inversion regions). The corrected random number generator state now advances independently across genomic blocks rather than resetting to a fixed value for each block, yielding slightly higher absolute TMRCA values (roughly 20\% in low-TMRCA regions) and tighter cross-population standard deviations. The qualitative pattern (outside $<$ core $<$ inversion interior) is unchanged, and all conclusions regarding the inversion's genealogical signal remain the same.
 
 \vspace{4pt}
 \begin{center}
@@ -168,7 +168,7 @@ SMC++, sawtooth                    & 2.7716 & 1.7919 \\
 %% ---------------------------------------------------------------
 \section*{\textcolor{accent}{5. Minor Corrections}}
 
-Typos suggest by reviewer were fixed and acknowledgments updated
+Typos suggested by the reviewers were fixed and the acknowledgments updated
 to thank the two anonymous reviewers.
 
 

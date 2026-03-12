@@ -42,7 +42,7 @@ and the unobservable ancestral recombination graph (ARG) that gave rise to them.
 Inspired by large language models, we develop \texttt{cxt}, a decoder-only transformer that 
 autoregressively predicts coalescent events conditioned on local mutational context.
 We show that \texttt{cxt} performs competitively with state-of-the-art MCMC-based likelihood models across a broad range of demographic scenarios, matching their accuracy in-distribution and approaching it in out-of-distribution settings, with the potential for further improvement via targeted fine-tuning.
-Trained on simulations spanning the \texttt{stdpopsim} catalog, the model generalizes robustly and enables efficient inference at scale,  
+Trained on simulations spanning the \texttt{stdpopsim} catalog \cite{adrion2020community, gower2023expanding, gower2025accessible}, the model generalizes robustly and enables efficient inference at scale,  
 producing over a million coalescence predictions in minutes.
 In addition \texttt{cxt} produces a well calibrated approximate posterior distribution of its predictions,
 enabling principled uncertainty quantification.
@@ -166,7 +166,7 @@ recovering known coalescent-time outliers in humans and time-resolved signals co
 We begin by presenting a conceptual schematic that adapts the general language modeling paradigm to population genetics, and draw parallels with SMC-based coalescent modeling to define our next-coalescence prediction task (Figure~1). We then benchmark \cxtkit's accuracy against current fast inference 
 methods, specifically \singer and \smcpp \cite{deng_robust_2024, terhorst_robust_2017}. 
 Next, we evaluate the model's cross-scenario generalization capabilities, 
-training and evaluating using the nearly complete \stdpopsim v0.2 and v0.3 catalogs across diverse species, demographic scenarios, and genetic maps (excluding only bacteria and two species with extreme recombination rates that preclude large-scale simulation and three models with ancient samples). 
+training and evaluating using the nearly complete \stdpopsim v0.2 and v0.3 catalogs \cite{adrion2020community, gower2023expanding} across diverse species, demographic scenarios, and genetic maps (excluding only bacteria and two species with extreme recombination rates that preclude large-scale simulation and three models with ancient samples). 
 We assess the global accuracy of TMRCA prediction by comparing true and estimated coalescence rates across simulations. 
 Finally, we apply \cxtkit to real genomic data, estimating coalescent times across two
 chromosomes from the 1000 Genomes Project, using pairs of haploid sequences of British ancestry as our focal samples and chromosome 2L of \textit{Anopheles} from samples taken from Cameroon, Mali, Burkina Faso, Ghana and Uganda.
@@ -339,7 +339,7 @@ This yields the \texttt{broad~(w200)} model and further reduces prediction error
 
 
 \subsection*{Out-of-sample tests for the broad model}
-During this project, \stdpopsim v0.3 was released, expanding the catalog to include additional species 
+During this project, \stdpopsim v0.3 was released \cite{gower2023expanding}, expanding the catalog to include additional species 
 (\textit{S.~scrofa, R.~norvegicus, P.~sinus, M.~musculus}, and \textit{G.~gorilla}). 
 We leveraged this release to assess the generalization ability of our broad model, testing performance \emph{without} retraining. 
 Because these species were not present in \stdpopsim v0.2, they constitute genuinely out-of-sample test cases for the broad model.
@@ -362,7 +362,7 @@ Across these v0.3 species, \cxtkit generalizes reasonably well, although \texttt
 
 \subsection*{Generalization across parameter regimes}
 
-A central goal of this project was to build a model that spans the diversity of scenarios represented in\stdpopsim, 
+A central goal of this project was to build a model that spans the diversity of scenarios represented in \stdpopsim, 
 motivated by the idea that as \stdpopsim expands, we can incrementally incorporate new species into training. 
 However, when applying \cxtkit to data from a new species, with potentially different mutation and recombination rates, effective population size or population structure,
 we expect inference accuracy to depend on how similar that species is to the regimes represented in the training data.
@@ -443,7 +443,7 @@ revisiting the canonical selective sweep at \emph{LCT} as a validation benchmark
 and then turning to more recently dated regions of the \emph{HLA} locus.
 In the latter case,
 our inferred TMRCA patterns are broadly consistent with previously reported old genealogical ages,
-though we infer slightly younger than \texttt{Singer+Polegon}. 
+though we infer slightly younger times than \texttt{Singer+Polegon}. 
 
 We then analyze the insecticide-resistance loci \emph{Rdl} in \textit{Anopheles gambiae}. 
 This locus has been highlighted using summary-statistic approaches,
@@ -519,7 +519,7 @@ while jointly accounting for large $N_e$ and missing-data patterns.
 The \texttt{Singer+Polegon} method was also run on the same samples.
 We tried two approaches to using \texttt{Singer+Polegon}:
 one with the ``natural'' parameterization of mutation and recombination rates,
-which for  \textit{Anopheles} yields a ratio of recombination:mutation $>>1$,
+which for \textit{Anopheles} yields a ratio of recombination:mutation $>>1$,
 and a second where we held this ratio fixed at $1$ (equivalent to the human
 parameterization).
 The former, ``natural'' parameterization yielded poor fits to observed diversity,
@@ -539,7 +539,7 @@ insecticide-resistance alleles among these populations
 supporting the interpretation that the inferred coalescent-time signal reflects
 geographically heterogeneous selection.
 
-In comparing their outputs, a key difference is in the behavior in regions 
+In comparing their outputs, we note a key difference in behavior in regions 
 with missing data. \texttt{Singer+Polegon} consistently infers strong dips
 in the TMRCA in regions with missing data (see SI Appendix, Fig.~S14),
 presumably as a result of miscalibrated expectations of mutation rate in those regions. 
@@ -550,13 +550,13 @@ artifacts are inferred.
 \smcpp also detects a noticeable reduction in TMRCA around the \emph{Rdl} sweep,
 but its blockwise representation limits localization.
 Even after scaling the output to match the true genomic span and calibrating
-genome-wide diversity to the \cxtkit and Singer+Polegon panels,
+genome-wide diversity to the \cxtkit and \texttt{Singer+Polegon} panels,
 the inferred trough remains discretized and slightly shifted.
 This is expected: \smcpp fits a global demographic process using coarse blocks,
 so narrow sweeps can be detected but their genomic breakpoints are less precisely resolved.
 
 
-\paragraph{Inversion interior coalescence signal and dating context}
+\paragraph{Dating an Inversion}
 To characterize how the \emph{In(2L)a} inversion shapes genealogical age across chr2L, 
 we summarize mean TMRCA in 
 (i) an outside background region (10--20~Mb), 
@@ -590,7 +590,7 @@ that can be sampled efficiently in parallel.
 This approach differs fundamentally from prior deep learning methods such as \texttt{ReLERNN} \cite{adrion2020predicting} or \texttt{CoalNN} \cite{nait_saada_inference_2023}, which treat inference along the chromosome as a supervised regression task, and produce a single point estimate from sequence data.
 In contrast, \cxtkit uses a language model to learn the underlying conditional stochastic process.
 
-In this work, \cxtkit produces genome-wide TMRCA estimates for a diploid individual in minutes on a single GPU,
+\cxtkit produces genome-wide TMRCA estimates for a diploid individual in minutes on a single GPU,
 and it can alternatively focus on a specific region and decode many pairs locally.
 Comparisons to \smcpp and \texttt{Singer+Polegon} show that \cxtkit
 consistently outperforms \smcpp in terms of accuracy of TMRCA inference (SI Appendix, Table~S6), and performs competitively with the state-of-the-art
@@ -618,11 +618,11 @@ consistent with gene--culture coevolution in the context of dairying \cite{bersa
 Our pairwise TMRCA estimates at \emph{LCT} reflect this known history cleanly,
 recovering a pronounced local dip in coalescence times centered on the locus.
 In our sample,
-some pairs exhibit a TMRCA younger than 10\,000 years,
+some pairs exhibit a TMRCA younger than 10{,}000 years,
 substantially younger than the average across the region, 
-but simultaneously we note that there is extensive
+but we note that there is extensive
 variation across pairs that likely reflects that LCT arose from standing variation \cite{peter2012distinguishing},
-and thus the locus harbors significant stochasticity in the underlying genealogies. 
+and thus the locus harbors significant variability in the underlying genealogies. 
 
 In the \emph{HLA} region,
 we observe exceptionally ancient separation times among alleles.
@@ -728,7 +728,7 @@ simulation parameterization next.
 
 We begin with a genotype matrix $G \in \mathbb{Z}^{2N \times M}$ 
 containing $2N$ haploid sequences (from $N$ diploid individuals) across $M$ sites, 
-obtained from coalescent simulations (here \texttt{msprime}) or empirical data. 
+obtained from coalescent simulations (here \texttt{msprime} \cite{baumdicker2022efficient}) or empirical data. 
 All empirical analyses in this work use within-individual pivot pairs 
 (the two haplotypes of one diploid, analogous to the PSMC setting), 
 for which phasing is not required:
@@ -786,7 +786,7 @@ To encode genomic position, we adopt rotary positional embeddings \cite{su_rofor
 which efficiently capture spatial structure and require no adjustment under fixed-stride windows (e.g., 2 kb).
 The resulting sequence fed to the transformer consists of 500 mutation embeddings, a start token, 
 and the coalescence embeddings, yielding a fixed latent length of 1001; padding exists but is unused. 
-A dropout rate of \textbf{0.1} is applied for regularization. 
+A dropout rate of 0.1 is applied for regularization. 
 Both narrow (single-scenario) and broad (multi-scenario) models (\cxtkit-narrow and \cxtkit-broad respectively) share this architecture, 
 with parameterization summarized in SI Appendix, Table~S1. 
 Further implementation details are available at \url{https://github.com/kr-colab/cxt}.

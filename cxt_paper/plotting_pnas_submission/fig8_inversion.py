@@ -193,12 +193,18 @@ def main():
             color=COL_DIST, label=R_ID, **bar_kw)
 
     ax0.set_yscale("log")
+    ax0.set_yticks([8e5, 9e5, 1e6, 1.25e6, 1.5e6])
+    ax0.set_yticklabels(
+        [r"$8 \times 10^5$", r"$9 \times 10^5$", r"$10^6$",
+         r"$1.25 \times 10^6$", r"$1.5 \times 10^6$"]
+    )
+    ax0.yaxis.set_minor_locator(plt.NullLocator())
     ax0.set_ylabel("Mean TMRCA")
     ax0.set_xticks(x_pos)
     ax0.set_xticklabels(labels, fontsize=5)
     ax0.legend(frameon=False, ncol=4, fontsize=5, loc="upper left",
                bbox_to_anchor=(0.0, 1.35))
-    ax0.grid(axis="y", which="both", linestyle="--", alpha=0.25)
+    ax0.grid(axis="y", which="major", linestyle="--", alpha=0.25)
 
     # ── Bottom: per-population + All panels ──────────────────────────────
     subplot_order = [

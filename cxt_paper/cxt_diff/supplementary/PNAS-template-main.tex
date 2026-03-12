@@ -14,8 +14,8 @@
 \newcommand{\msprime}{\texttt{msprime}}
 \usepackage{xspace}
 \newcommand{\stdpopsim}{\texttt{stdpopsim}\xspace}
-\newcommand{\singer}{\texttt{Singer}}
-\newcommand{\smcpp}{\texttt{SMC++}}
+\newcommand{\singer}{\texttt{Singer}\xspace}
+\newcommand{\smcpp}{\texttt{SMC++}\xspace}
 \newcommand{\logspace}{\text{log-space}}
 
 \title{Coalescence and Translation: A Language Model for Population Genetics}
@@ -59,15 +59,15 @@ justified.
 \paragraph{Splitting the encoder and decoder.}
 We also considered a cleaner encoder-decoder separation for improved
 maintainability and the possibility of halving context length by compressing
-the mutation stream prior to temporal decoding. While promising-especially in
-light of simpler key-value caching-the monolithic GPT-like architecture appeared conceptually simpler, though we may return to this design in future models.
+the mutation stream prior to temporal decoding. While promising---especially in
+light of simpler key-value caching---the monolithic GPT-like architecture appeared conceptually simpler, though we may return to this design in future models.
 
 \paragraph{Training mixtures without repetition.}
 Early training experiments drew demographies randomly without repetition across
 epochs. This prevented the model from seeing the same statistical structure
 often enough to form stable internal representations and led to degraded
-inference accuracy. Reintroducing repetition-training many iterations of the
-same demography with different random seeds-proved essential for stable
+inference accuracy. Reintroducing repetition---training many iterations of the
+same demography with different random seeds---proved essential for stable
 learning and effective generalization.
 
 
@@ -146,7 +146,7 @@ The input module projecting SFS values per window of specified size into latent 
 
 \subsection*{Model Configuration}
 
-Hyperparameter specifications of our narrow and broad model.
+Hyperparameter specifications of our narrow and broad models.
 
 \begin{table}[ht]
     \centering
@@ -201,7 +201,7 @@ We organized our training data into four distinct sets. The first is a large bas
 used to train the narrow model, with parameters chosen to approximate human simulations.
 This set consists of a single demographic scenario with constant population size
 (see Table~\ref{tab:base-dataset}). 
-We also performed fine tuning of the narrow model for a
+We also performed fine-tuning of the narrow model for a
 few auxiliary models (Table~\ref{tab:base-dataset-extension}).
 The third dataset is the \stdpopsim v0.2 dataset (see Table~\ref{tab:stdpopsim-dataset}), 
 the main dataset used in this study that we call the broad model. 
@@ -339,18 +339,17 @@ The final dataset comprises \stdpopsim v0.3 models, which are used for evaluatio
 \subsection*{Calibration of the Molecular Clock}
 \label{app:clock}
 
-\cxtkit output is run in replicates (default 15), that together provide a distribution over TMRCA trajectories. 
+\cxtkit output is run in replicates (default 15), which together provide a distribution over TMRCA trajectories. 
 Although the language model is agnostic to mutation rate (in the sense that this is not provided as an explicit input, and
 the model sees data generated under many mutation rates during training), it will generally be desirable to condition on a particular mutation rate/molecular clock for $N_{e}$ calibration purposes. 
 This is done by scaling the raw predictions such that expected nucleotide diversity matches the observed nucleotide diversity
 across the full context (e.g. the 1Mb sequence).
-Empirically, this first-order correction is most helpful when the model is applied to data that is atypical relative to the 
+Empirically, this first-order correction is most helpful when the model is applied to data that are atypical relative to the 
 training simulations (see Figure \ref{fig:correction-heatmap}).
 Crucially, the relative TMRCA is highly accurate even in out-of-distribution scenarios, so that the first order correction
 is generally sufficient to make bias and mean squared error constant across a wide range of scenarios.
 
-One issue is that a deterministic first-order correction will reduce variability in \cxtkit's ``posterior'' samples-- 
-for example, TMRCA trajectories that are constant across the windows but have distinct values across replicates, would be all collapsed to the same value. 
+One issue is that a deterministic first-order correction will reduce variability in \cxtkit's ``posterior'' samples---for example, TMRCA trajectories that are constant across the windows but have distinct values across replicates, would be all collapsed to the same value. 
 Thus, we model the correction factor probabilistically to preserve replicate variability. 
 For a given pivot pair $i$, we assume the observed mutation count $y_i$ follows a Poisson model:
 \[
@@ -393,7 +392,7 @@ Across three distinct parameter regimes,
 we find that \cxtkit produces generally well-calibrated posterior samples across
 most positions within the 1\,Mb prediction window (Supplementary Figure \ref{fig:posterior-calibration}, top row). 
 These approximate posteriors are typically slightly
-over-concentrated high nominal coverage (e.g., intervals containing 95\% of the posterior mass contain the true
+over-concentrated at high nominal coverage (e.g., intervals containing 95\% of the posterior mass contain the true
 TMRCA roughly 92\% of the time), 
 but are otherwise remarkably stationary: the empirical coverage declines appreciably only in the final 2\,kb window. 
 This drop appears to be driven by a tendency of the trained model to predict occasional jumps in the last window,
@@ -539,7 +538,7 @@ The impact of calibrating the molecular clock using observed nucleotide diversit
 \begin{figure}[h!]
 \centering
 \includegraphics[width=\textwidth]{figures/adapter_0.png}
-\caption{$\cxtkit$s broad model fine-tuned with a low-parameter adapter to account for small sample sizes. On the left, $\cxtkit$ is demonstrated on a constant demography, while on the right the sawtooth scenario is presented.}
+\caption{\cxtkit's broad model fine-tuned with a low-parameter adapter to account for small sample sizes. On the left, $\cxtkit$ is demonstrated on a constant demography, while on the right the sawtooth scenario is presented.}
 \label{fig:adapter}
 \end{figure}
 
@@ -547,7 +546,7 @@ The impact of calibrating the molecular clock using observed nucleotide diversit
 \begin{figure}[h!]
 \centering
 \includegraphics[width=\textwidth]{figures/figure_S2_2.png}
-\caption{$\cxtkit$s broad model (left) on \stdpopsim AnoGam parameterization at window resolution 2 Kb, in the middle at 0.2 Kb and after fine-tuning on large \stdpopsim species larger than 100 k $N_e$.}
+\caption{\cxtkit's broad model (left) on \stdpopsim AnoGam parameterization at window resolution 2 Kb, in the middle at 0.2 Kb and after fine-tuning on large \stdpopsim species larger than 100 k $N_e$.}
 \label{fig:anogam_w200}
 \end{figure}
 
@@ -588,7 +587,7 @@ For inferences with an underlying genetic map see Figure~\ref{fig:margdist_map}.
 \centering
 \includegraphics[width=\textwidth]{figures/posterior_calibration.png}
 \caption{
-The approximate posterior distributions sampled from by \cxtkit give well-calibrated estimates of uncertainty for predicted TMRCAs, across a range of scenarios. Top row: the proportion of true TMRCAs that fall within credibility intervals of a given width (e.g. a given proportion of posterior mass), as a function of position in the 1Mb prediction frame. Credibility intervals are calculated from quantiles of 100 samples from the approximate posterior for each pivot pair, and the proportion covering the true TMRCAs are calculated over 1000 independent pivot pairs (e.g. from distinct genealogical simulations). The expected proportions (for an exact posterior) are shown as dashed lines. Empirically, the approximate posteriors are asymptotically well-calibrated, although slightly over-concentrated for larger interval widths (likely due to the time discretization used by \cxtkit). The decrease in coverage for the last 2Kb window is due to a tendency of the LLM to introduce large jumps in TMRCA in this window. Bottom row: the posterior variance, averaged over 1000 independent pivot pairs, as a function of position in the prediction frame and mutation rate (where $\mu$ stands for the species' mutation rate in \stdpopsim). As mutational information accrues, the posteriors become more precise; and lose precision towards the boundaries of the prediction frame where local context has been clipped.
+The approximate posterior distributions sampled from by \cxtkit give well-calibrated estimates of uncertainty for predicted TMRCAs, across a range of scenarios. Top row: the proportion of true TMRCAs that fall within credibility intervals of a given width (e.g. a given proportion of posterior mass), as a function of position in the 1Mb prediction frame. Credibility intervals are calculated from quantiles of 100 samples from the approximate posterior for each pivot pair, and the proportion covering the true TMRCAs are calculated over 1000 independent pivot pairs (e.g. from distinct genealogical simulations). The expected proportions (for an exact posterior) are shown as dashed lines. Empirically, the approximate posteriors are asymptotically well-calibrated, although slightly over-concentrated for larger interval widths (likely due to the time discretization used by \cxtkit). The decrease in coverage for the last 2Kb window is due to a tendency of the LLM to introduce large jumps in TMRCA in this window. Bottom row: the posterior variance, averaged over 1000 independent pivot pairs, as a function of position in the prediction frame and mutation rate (where $\mu$ stands for the species' mutation rate in \stdpopsim). As mutational information accrues, the posteriors become more precise, and lose precision towards the boundaries of the prediction frame where local context has been clipped.
 }
 \label{fig:posterior-calibration}
 \end{figure}
@@ -659,7 +658,7 @@ as a genome browser track.
 across five African populations (Upper panel).
 For Burkina Faso, Mali, Cameroon, and Uganda,
 we analyze 25 focal pairs per population;
-for Ghana, we analysed only five diploid individuals.
+for Ghana, we analyzed only five diploid individuals.
 Panels show the \emph{Rdl} region (highlighted in red),
 with estimates from \cxtkit (left),
 \texttt{Singer+Polegon} (middle),
