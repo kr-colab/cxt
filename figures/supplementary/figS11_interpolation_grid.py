@@ -328,7 +328,7 @@ def main():
     plt.rcParams.update({'font.size': 11})
 
     # --- 3x2 heatmaps figure ---
-    fig, axes = plt.subplots(3, 2, figsize=(15, 22), constrained_layout=True)
+    fig, axes = plt.subplots(3, 2, figsize=(10, 14), constrained_layout=True)
 
     # (A) Top-left: rho/theta ratio
     h1 = sns.heatmap(rhotheta_matrix,

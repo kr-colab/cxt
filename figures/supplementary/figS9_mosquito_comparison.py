@@ -37,7 +37,8 @@ STEP_BP = 200
 RDL_START = 25_363_652
 RDL_END = 25_434_556
 
-FIG7_CACHE = "figures/output/main/cache/fig7"
+FIG7_CACHE_DEFAULT = "figures/output/main/cache/fig7"
+FIG7_CACHE = FIG7_CACHE_DEFAULT
 REVISION_CACHE = REVISION_MOSQUITO_CACHE
 
 POP_MAP_CXT = {
@@ -263,10 +264,14 @@ def plot_panel(ax, x, tmrca_reps, method, show_rdl=True,
 # ── Main ──────────────────────────────────────────────────────
 
 def main():
+    global FIG7_CACHE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="figures/output/supplementary")
+    parser.add_argument("--fig7-cache-dir", default=FIG7_CACHE_DEFAULT,
+                        help="Path to fig7 cache with genome_{pop}.npz files")
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
+    FIG7_CACHE = args.fig7_cache_dir
 
     missing_frac = load_missingness(AG1000G_ACCESSIBILITY, STEP_BP)
 

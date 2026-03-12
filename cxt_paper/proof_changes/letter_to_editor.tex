@@ -1,0 +1,178 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{mdframed}
+
+\definecolor{accent}{HTML}{2E86C1}
+\definecolor{darktext}{HTML}{2C3E50}
+\definecolor{addbg}{HTML}{D6EAF8}
+\definecolor{addtext}{HTML}{1A5276}
+\definecolor{rembg}{HTML}{EAECEE}
+\definecolor{remtext}{HTML}{7F8C8D}
+\definecolor{ctxtext}{HTML}{2C3E50}
+\definecolor{framecol}{HTML}{AED6F1}
+\definecolor{diffbg}{HTML}{FAFAFA}
+
+\newcommand{\rem}[1]{\par\noindent\colorbox{rembg}{\parbox{\dimexpr\linewidth-2\fboxsep}{\small\textcolor{remtext}{\texttt{-\ #1}}}}}
+\newcommand{\add}[1]{\par\noindent\colorbox{addbg}{\parbox{\dimexpr\linewidth-2\fboxsep}{\small\textcolor{addtext}{\texttt{+\ #1}}}}}
+\newcommand{\ctx}[1]{\par\noindent{\parbox{\linewidth}{\small\textcolor{ctxtext}{\texttt{\ \ #1}}}}}
+
+\mdfdefinestyle{diffbox}{
+  linecolor=framecol,
+  linewidth=0.8pt,
+  backgroundcolor=diffbg,
+  innerleftmargin=4pt,
+  innerrightmargin=4pt,
+  innertopmargin=4pt,
+  innerbottommargin=4pt,
+  skipabove=6pt,
+  skipbelow=6pt,
+}
+
+\hypersetup{colorlinks=true, linkcolor=accent, urlcolor=accent}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\small\thepage}
+
+\begin{document}
+
+\noindent{\Large\bfseries\textcolor{accent}{Summary of Proof-Stage Revisions}}\\[4pt]
+\noindent{\normalsize \textit{cxt}: A Language Model for Population Genetics}
+
+\vspace{6pt}
+
+\noindent Dear Editor,
+
+\vspace{4pt}
+
+\noindent Below is a summary of changes made at proof stage. All modifications
+preserve the scientific content; they consist of PNAS formatting, text shortenings
+for the page limit, updated benchmark numbers after re-running the pipeline to fix minor seed issue, 
+and addressing reviewers 2 clarification requests.
+
+%% ---------------------------------------------------------------
+\section*{\textcolor{accent}{1. Formatting \& Text Shortenings}}
+
+We reformatted the manuscript to PNAS requests and made the following changes to the text:
+The scientific content is fully preserved to was just done to fit the page limit.
+
+\subsection*{\small 1a. Transformer / GPT introduction}
+\begin{mdframed}[style=diffbox]
+\rem{More recently, transformer-based language models (LMs) have been introduced that enhance prediction capabilities through the learning of stochastic processes, rather than scenario-constrained parameter estimation. Transformer LMs are perhaps best known in the context of pretrained generative models for human language such as GPT. These models are pretrained in that they are first trained on a ``pretext'' task, such as next token prediction, that requires the LM to learn context among observations (tokens) in a sequence locally and their relation to higher-level associations in the space of language. Modern large LMs are in part wildly successful due to their massive numbers of parameters (e.g.\ hundreds of billions) that enable them to effectively learn rich representations and flexible conditional prediction across contexts and thus to generalize. Here we describe a pretrained generative model for population genetics that leverages a small language model (10-20M parameters) to effectively translate from mutational patterns across chromosomes to coalescent time estimates. This opens the door to a generalizable (non-task specific) model paradigm: pretraining a flexible transformer on a diverse range of coalescent simulations, followed by fine-tuning for specific evolutionary tasks, if necessary.}
+\add{More recently, transformer-based language models (LMs) have been introduced that enhance prediction capabilities through the learning of stochastic processes, rather than scenario-constrained parameter estimation. Inspired by pretrained generative models such as GPT, we leverage this paradigm with a small model (10-20M parameters) that translates mutational patterns across chromosomes to coalescent time estimates, opening the door to a generalizable approach: pretraining on diverse coalescent simulations, followed by fine-tuning for specific evolutionary tasks if necessary.}
+\end{mdframed}
+
+\subsection*{\small 1b. Next-coalescence prediction (Introduction)}
+\begin{mdframed}[style=diffbox]
+\rem{To enable this inference, we define a novel task, analogous to next-token prediction in language modeling, which we term next-coalescence prediction. In this formulation, the model predicts the next coalescence time along a sequence of previously predicted events, across discrete sequence space, conditioned on local mutation densities within a fixed context window. While this does not reconstruct full genealogical topologies, it enables a structured prediction task that translates between observed mutation patterns and pairwise coalescence times --- akin to approaches such as PSMC or SMC++, the latter being the method to which cxt is conceptually a close neural analog, in the sense that prediction happens on a pivot (or distinguished pair), while sharing information across haplotypes through the SFS. Thus, the model offers a way to navigate between the observed distribution of mutation densities and the latent pairwise genealogical structure by means of a sequence of coalescence event prediction.}
+\add{To enable this inference, we define a novel task analogous to next-token prediction, which we term next-coalescence prediction: the model autoregressively predicts the next pairwise coalescence time conditioned on local mutation densities within a fixed context window. While this does not reconstruct full genealogical topologies, it provides a structured translation from observed mutation patterns to pairwise coalescence times. Conceptually, cxt is a close neural analog of SMC++: prediction is centered on a pivot (distinguished) pair, with information shared across haplotypes through the SFS.}
+\end{mdframed}
+
+\subsection*{\small 1c. Figure 1 right panel (Fast and Accurate Inference)}
+\begin{mdframed}[style=diffbox]
+\rem{The right panel of Figure 1 shows a concrete example of the model's output. Leveraging our GPU-enabled method, we infer pairwise coalescence times for all C(50,2) pairs of a sample of 50 haploid chromosomes in parallel by placing them in a batch of size 1225 (although note this batch size is dependent on GPU memory, and can be adjusted to available GPU memory). We then run the generative process multiple times, typically 15 replicates, and average the results to obtain stable and robust estimates. This generative process provides samples from an approximate posterior distribution of pair coalescence times across the sequence (where the prior is implicit via the simulated training set; see Calibration). In the right panel of Figure 1, we apply our cxt to a constant population size scenario with a population size of 2x10\^{}4 and approximately equal mutation and recombination rates (see Datasets below). In that figure true coalescent times are shown in black, the replicate predictions in light blue, and the average prediction in dark blue. In this simple setting, where the model is well-specified, cxt produces highly accurate predictions. Importantly, cxt can predict coalescent times for all pivot pairs concurrently in approximately five minutes of computation on an NVIDIA A100 GPU with 80GB memory.}
+\add{The right panel of Figure 1 illustrates cxt on a constant-size scenario (N\_e = 2x10\^{}4, roughly equal mutation and recombination rates; see Datasets). All C(50,2) pivot pairs of 50 haploid chromosomes are inferred in parallel; for each pair the generative process is repeated 15 times, yielding samples from an approximate posterior over pairwise coalescence times along the sequence (where the prior is implicit via the simulated training set; see Calibration). Averaging across replicates produces stable estimates. In this well-specified setting cxt is highly accurate, and inference for all pairs completes in approximately five minutes on a single NVIDIA A100 GPU.}
+\end{mdframed}
+
+\subsection*{\small 1d. Sample-size adapter (Benchmark Comparisons)}
+\begin{mdframed}[style=diffbox]
+\rem{As cxt is trained at a specific sample size, the user has a few options should they want to infer coalescent times in a new sample of different size: 1) they could retrain the model starting from a new set of simulations that condition on their sample size, 2) if the sample size is larger than the trained model, they could subsample down to the appropriate size, or 3) if the sample is smaller than the trained model we have created a light-weight adapter, which quickly fine-tunes a larger sample size trained cxt model to a smaller sample size. In SI Appendix, Fig. S4, we show representative results from the adapter applied to samples of size N=5 diploids from a cxt model trained at sample size N=25 diploids, and then used for inference of a constant sized simulation (left panel) or the sawtooth simulation (right panel).}
+\add{Because cxt is trained at a fixed sample size, users with larger samples can subsample, while for smaller samples we provide a lightweight adapter that fine-tunes the pretrained model to the target cohort size. SI Appendix, Fig. S4 shows adapter results transferring from N=25 to N=5 diploids on both the constant-size and sawtooth scenarios.}
+\end{mdframed}
+
+\subsection*{\small 1e. Interpolation / extrapolation (Generalization)}
+\begin{mdframed}[style=diffbox]
+\rem{In SI Appendix, Fig. S12, we assess the model's ability to interpolate and extrapolate beyond the training distribution with respect to mutation and recombination rates, holding Ne fixed at 20,000. We define a grid of mutation and recombination rates chosen to encompass most stdpopsim species (panel A); the distribution of species across this grid is shown in panel B. Panel A also highlights a range of recombination-to-mutation rate ratios (B), while panels C and D report performance over the grid in terms of MSE and KL divergence, respectively. As expected, error is highest in the low-mutation, high-recombination region (bottom right of C) where the signal-to-noise ratio is the least favorable for TMRCA inference. Fig. S12 provides representative examples of TMRCA predictions from the four corners of the grid. Together, these results show that cxt can generalize beyond the specific regions of parameter space represented in the training data.}
+\add{We assessed cxt's ability to interpolate and extrapolate beyond the training distribution by evaluating prediction accuracy across a grid of mutation and recombination rates at fixed N\_e = 20,000 (SI Appendix, Fig. S12). The grid is chosen to span most stdpopsim species; MSE and KL divergence heatmaps show that, as expected, error is highest in the low-mutation, high-recombination regime where the signal-to-noise ratio is least favorable. Representative TMRCA predictions from the four corners of the grid confirm that cxt generalizes beyond the parameter regions represented in training.}
+\end{mdframed}
+
+\subsection*{\small 1f. Demographic inferences from short sequences}
+\begin{mdframed}[style=diffbox]
+\rem{It is worth noting that the demographic inferences shown in Figure 4 and SI Appendix, Fig. S10 are based on relatively short simulated sequences. For computational efficiency, we restrict these demonstrations to 10 Mb of simulated genome. Because shorter sequences increase the variance of recent-time coalescence-rate estimates by truncating the longest tracts of recent ancestry, we expect that applying the same procedure to full-length chromosomes would yield substantially improved accuracy. Together, these results show that cxt's local TMRCA predictions can be aggregated into accurate genome-scale summaries of demography, with performance expected to improve further at realistic chromosome lengths.}
+\add{These demographic inferences are based on 10 Mb of simulated sequence (Figure 4 and SI Appendix, Fig. S10); because shorter sequences truncate the longest tracts of recent ancestry, increasing variance in recent-time rate estimates, we expect substantially improved accuracy at full chromosome lengths. Overall, cxt's local TMRCA predictions aggregate into accurate genome-scale demographic summaries.}
+\end{mdframed}
+
+\subsection*{\small 1g. Rdl comparison panel (Application to Ag1000G)}
+\begin{mdframed}[style=diffbox]
+\rem{To investigate selective dynamics at the Rdl locus across multiple A. gambiae populations, we constructed a comparison panel (SI Appendix, Fig. S11) comprising (i) coalescent-time landscapes inferred by cxt (left column), (ii) corresponding estimates from Singer+Polegon (middle column), and (iii) SMC++ decodings (right column). Analyzing Ag1000G data poses two practical challenges. First, large effective population sizes imply high N\_e-scaled mutation and recombination rates, which increase genealogical heterogeneity and the number of recombination events, substantially slowing MCMC-based approaches such as Singer+Polegon. Second, missingness varies widely across genomic regions, requiring methods that can accommodate irregular observation patterns (density of missing data is shown beneath the upper and lower panels as a track in SI Appendix, Fig. S11). To improve readability in the main text, we restrict these figures to cxt (SI Appendix, Fig. S14); full comparisons with Singer+Polegon and other approaches are shown in the SI Appendix, where these analyses are presented in detail.}
+\add{To investigate selective dynamics at the Rdl locus across multiple A. gambiae populations, we constructed a comparison panel (SI Appendix, Fig. S11) showing coalescent-time landscapes from cxt, Singer+Polegon, and SMC++. The challenges outlined above are particularly acute here; high N\_e-scaled rates substantially slow MCMC-based approaches such as Singer+Polegon. For readability, main-text figures show only cxt results (SI Appendix, Fig. S14); full method comparisons appear in the SI Appendix.}
+\end{mdframed}
+
+\subsection*{\small 1h. SMC++ blockwise representation at Rdl}
+\begin{mdframed}[style=diffbox]
+\rem{SMC++ also detects a noticeable reduction in TMRCA around the Rdl sweep, but its blockwise representation limits how precisely this signal can be localized along the genome. Even after scaling the SMC++ output to match the true genomic span of the region and applying manual calibration so that its genome-wide diversity patterns align with the cxt and Singer+Polegon panels, the inferred trough remains discretized and slightly shifted. This behavior is expected: SMC++ models the genome using coarse blocks under a global demographic process, so narrow sweeps can be detected, but their boundaries are blurred by the block structure. As a result, SMC++ can identify strong selective events, but it is less able to resolve their precise genomic breakpoints.}
+\add{SMC++ also detects a noticeable reduction in TMRCA around the Rdl sweep, but its blockwise representation limits localization. Even after scaling the output to match the true genomic span and calibrating genome-wide diversity to the cxt and Singer+Polegon panels, the inferred trough remains discretized and slightly shifted. This is expected: SMC++ fits a global demographic process using coarse blocks, so narrow sweeps can be detected but their genomic breakpoints are less precisely resolved.}
+\end{mdframed}
+
+%% ---------------------------------------------------------------
+\section*{\textcolor{accent}{2. Updated Benchmark Numbers (Figures 2 \& 6)}}
+
+Some MSE values were recomputed after providing now a single script which reproduces the entire paper. This lead to the identification of a minor bookkeeping error in the seeds of the post-hoc correction approach; no qualitative conclusion is affected. Consolidating the pipeline into a single script also introduced minor seed-level differences that propagate to the Singer+Polegon and SMC++ numbers, though the changes are negligible.
+
+The same seed fix also affects the bias-correction step applied to the empirical mosquito TMRCA estimates (Figure~6 and the corresponding in-text summary statistics for the \emph{In(2L)a} inversion regions). The corrected random-number-generator state now advances independently across genomic blocks rather than resetting to a fixed value per block, yielding slightly higher absolute TMRCA values (roughly 20\% in low-TMRCA regions) with tighter cross-population standard deviations. The qualitative pattern (outside $<$ core $<$ inversion interior) is unchanged, and all conclusions regarding the inversion's genealogical signal remain the same.
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Model / Scenario} & \textbf{Previous} & \textbf{Updated} \\
+\midrule
+\textit{cxt}-narrow, constant      & 0.2447 & 0.2531 \\
+\textit{cxt}-narrow, sawtooth      & 0.6431 & 0.7496 \\
+\textit{cxt}-broad, sawtooth       & 0.1807 & 0.1796 \\
+Singer+Polegon, constant           & 0.2464 & 0.2470 \\
+Singer+Polegon, sawtooth           & 0.2430 & 0.2129 \\
+SMC++, constant                    & 0.9032 & 0.8685 \\
+SMC++, sawtooth                    & 2.7716 & 1.7919 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+%% ---------------------------------------------------------------
+\section*{\textcolor{accent}{3. Revised Singer comparison language}}
+
+\begin{mdframed}[style=diffbox]
+\ctx{Abstract:}
+\rem{We show that cxt performs on par with state-of-the-art MCMC-based likelihood models across a broad range of demographic scenarios, including both in-distribution and out-of-distribution settings.}
+\add{We show that cxt performs competitively with state-of-the-art MCMC-based likelihood models across a broad range of demographic scenarios, matching their accuracy in-distribution and approaching it in out-of-distribution settings, with the potential for further improvement via targeted fine-tuning.}
+\vspace{4pt}
+\ctx{Out-of-sample results:}
+\rem{Across these v0.3 species, cxt performs on par with Singer+Polegon and substantially better than the SMC++ decodings.}
+\add{Across these v0.3 species, cxt generalizes reasonably well, although Singer+Polegon achieves lower error in most scenarios, in some cases by a substantial margin. Both methods substantially outperform the SMC++ decodings.}
+\vspace{4pt}
+\ctx{Discussion:}
+\rem{Comparisons to SMC++ and Singer+Polegon show that cxt consistently outperforms SMC++ in terms of accuracy of TMRCA inference (Table S6), and matches the state-of-the-art ARG-based method Singer+Polegon, a strong benchmark given its joint use of all samples. Achieving comparable performance without explicit ARG modeling highlights the efficiency of the language-model approach.}
+\add{Comparisons to SMC++ and Singer+Polegon show that cxt consistently outperforms SMC++ in terms of accuracy of TMRCA inference (Table S6), and performs competitively with the state-of-the-art ARG-based method Singer+Polegon---matching it in well-specified settings, though with higher error in some out-of-distribution scenarios. Singer+Polegon remains the more accurate choice when computational cost is not a constraint, but achieving competitive performance without explicit ARG modeling highlights the efficiency of the language-model approach.}
+\end{mdframed}
+
+
+%% ---------------------------------------------------------------
+\section*{\textcolor{accent}{4. Phasing comment}}
+
+\begin{mdframed}[style=diffbox]
+\rem{We begin with a genotype matrix G in Z\^{}\{N x M\} containing N diploid samples across M sites, from coalescent simulations (here msprime). Phasing is not required for real data, as using both haplotypes per individual yields the same pivot-pair conditioning used throughout.}
+\add{We begin with a genotype matrix G in Z\^{}\{2N x M\} containing 2N haploid sequences (from N diploid individuals) across M sites, obtained from coalescent simulations (here msprime) or empirical data. All empirical analyses in this work use within-individual pivot pairs (the two haplotypes of one diploid, analogous to the PSMC setting), for which phasing is not required: heterozygous and homozygous sites are determined by the genotype alone, so the XOR/XNOR features and SFS weights that constitute the model input are identical whether or not phase is known. Cross-individual pivot pairs, used here only in simulated benchmarks where phase is known by construction, would require phased haplotypes; in that setting, standard statistical phasing tools can be applied as a routine upstream step.}
+\end{mdframed}
+
+%% ---------------------------------------------------------------
+\section*{\textcolor{accent}{5. Minor Corrections}}
+
+Typos suggest by reviewer were fixed and acknowledgments updated
+to thank the two anonymous reviewers.
+
+
+\noindent Sincerely,\\[2pt]
+\noindent Kevin Korfmann
+
+\end{document}

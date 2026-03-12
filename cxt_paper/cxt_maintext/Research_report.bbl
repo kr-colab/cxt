@@ -1,0 +1,362 @@
+\begin{thebibliography}{10}
+
+\bibitem{kingman_coalescent_1982}
+J. Kingman, The coalescent.
+\newblock {\em\protect\JournalTitle{Stochastic Process. Appl.}} \textbf{13},
+  235--248 (1982).
+
+\bibitem{hudson_properties_1983}
+R.~R. Hudson, Properties of a neutral allele model with intragenic
+  recombination.
+\newblock {\em\protect\JournalTitle{Theor. Popul. Biol.}} \textbf{23}, 183--201
+  (1983).
+
+\bibitem{griffiths_ancestral_1997}
+R.~C. Griffiths, P. Marjoram, An ancestral recombination graph in {\em Progress
+  in population genetics and human evolution}.
+\newblock pp. 257--270 (1997).
+
+\bibitem{griffiths_two-locus_1991}
+R.~C. Griffiths, The two-locus ancestral graph in {\em Institute of
+  Mathematical Statistics Lecture Notes - Monograph Series}.
+\newblock pp. 100--117 (1991).
+
+\bibitem{kelleher_inferring_2019}
+J. Kelleher, et~al., Inferring whole-genome histories in large population
+  datasets.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{51}, 1330--1338
+  (2019).
+
+\bibitem{speidel_method_2019}
+L. Speidel, M. Forest, S. Shi, S.~R. Myers, A method for genome-wide genealogy
+  estimation for thousands of samples.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{51}, 1321--1329
+  (2019).
+
+\bibitem{zhang2023biobank}
+B.~C. Zhang, A. Biddanda, {\'{A}}.~F. Gunnarsson, F. Cooper, P.~F. Palamara,
+  Biobank-scale inference of ancestral recombination graphs enables
+  genealogical analysis of complex traits.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{55}, 768--776 (2023).
+
+\bibitem{deng_robust_2024}
+Y. Deng, R. Nielsen, Y.~S. Song, Robust and accurate {Bayesian} inference of
+  genome-wide genealogies for large samples (2024).
+
+\bibitem{griffiths_ancestral_1996}
+R. Griffiths, P. Marjoram, Ancestral inference from samples of {DNA} sequences
+  with recombination.
+\newblock {\em\protect\JournalTitle{J. Comput. Biol.}} \textbf{3}, 479--502
+  (1996).
+
+\bibitem{wiuf_recombination_1999}
+C. Wiuf, J. Hein, Recombination as a point process along sequences.
+\newblock {\em\protect\JournalTitle{Theor. Popul. Biol.}} \textbf{55}, 248--259
+  (1999).
+
+\bibitem{mcvean_approximating_2005}
+G.~A. McVean, N.~J. Cardin, Approximating the coalescent with recombination.
+\newblock {\em\protect\JournalTitle{Philos. Trans. R. Soc. B}} \textbf{360},
+  1387--1393 (2005).
+
+\bibitem{li_inference_2011}
+H. Li, R. Durbin, Inference of human population history from individual
+  whole-genome sequences.
+\newblock {\em\protect\JournalTitle{Nature}} \textbf{475}, 493--496 (2011).
+
+\bibitem{schiffels_inferring_2014}
+S. Schiffels, R. Durbin, Inferring human population size and separation history
+  from multiple genome sequences.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{46}, 919--925 (2014).
+
+\bibitem{malaspinas_genomic_2016}
+A. Malaspinas, et~al., A genomic history of {Aboriginal} {Australia}.
+\newblock {\em\protect\JournalTitle{Nature}} \textbf{538}, 207--214 (2016).
+
+\bibitem{terhorst_robust_2017}
+J. Terhorst, J.~A. Kamm, Y.~S. Song, Robust and scalable inference of
+  population history from hundreds of unphased whole-genomes.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{49}, 303--309 (2017).
+
+\bibitem{sellinger_inference_2020}
+T.~P.~P. Sellinger, D.~A. Awad, M. Moest, A. Tellier, Inference of past
+  demography, dormancy and self-fertilization rates from whole genome sequence
+  data.
+\newblock {\em\protect\JournalTitle{PLoS Genet.}} \textbf{16}, e1008698 (2020).
+
+\bibitem{korfmann_simultaneous_2024}
+K. Korfmann, T.~P.~P. Sellinger, F. Freund, M. Fumagalli, A. Tellier,
+  Simultaneous inference of past demography and selection from the ancestral
+  recombination graph under the beta coalescent.
+\newblock {\em\protect\JournalTitle{Peer Community J.}} \textbf{4} (2024).
+
+\bibitem{sellinger_improved_2024}
+T. Sellinger, F. Johannes, A. Tellier, Improved inference of population
+  histories by integrating genomic and epigenomic data.
+\newblock {\em\protect\JournalTitle{eLife}} \textbf{12} (2024).
+
+\bibitem{palamara_high-throughput_2018}
+P.~F. Palamara, J. Terhorst, Y.~S. Song, A.~L. Price, High-throughput inference
+  of pairwise coalescence times identifies signals of selection and enriched
+  disease heritability.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{50}, 1311--1317
+  (2018).
+
+\bibitem{schweiger_ultra-fast_2023}
+R. Schweiger, R. Durbin, Ultra-fast genome-wide inference of pairwise
+  coalescence times (2023).
+
+\bibitem{terhorst_accelerated_2024}
+J. Terhorst, Accelerated {Bayesian} inference of population size history from
+  recombining sequence data.
+\newblock {\em\protect\JournalTitle{bioRxiv}} p. 2024.03.25.586640 (2024).
+
+\bibitem{beaumont_approximate_2002}
+M.~A. Beaumont, W. Zhang, D.~J. Balding, Approximate {Bayesian} computation in
+  population genetics.
+\newblock {\em\protect\JournalTitle{Genetics}} \textbf{162}, 2025--2035 (2002).
+
+\bibitem{boitard_inferring_2016}
+S. Boitard, W. Rodríguez, F. Jay, S. Mona, F. Austerlitz, Inferring population
+  size history from large samples of genome-wide molecular data - an
+  approximate {Bayesian} computation approach.
+\newblock {\em\protect\JournalTitle{PLoS Genet.}} \textbf{12}, e1005877 (2016).
+
+\bibitem{jay_abc_2019}
+F. Jay, S. Boitard, F. Austerlitz, An {ABC} method for whole-genome sequence
+  data: Inferring {Paleolithic} and {Neolithic} human expansions.
+\newblock {\em\protect\JournalTitle{Mol. Biol. Evol.}} \textbf{36}, 1565--1579
+  (2019).
+
+\bibitem{min2025neural}
+J. Min, Y. Ning, N.~S. Pope, F. Baumdicker, A.~D. Kern, Neural posterior
+  estimation for population genetics.
+\newblock {\em\protect\JournalTitle{bioRxiv}} pp. 2025--12 (2025).
+
+\bibitem{schmidhuber_annotated_2022}
+J. Schmidhuber, Annotated history of modern {AI} and deep learning (2022).
+
+\bibitem{korfmann_deep_2023}
+K. Korfmann, O.~E. Gaggiotti, M. Fumagalli, Deep learning in population
+  genetics.
+\newblock {\em\protect\JournalTitle{Genome Biol. Evol.}} \textbf{15}, evad008
+  (2023).
+
+\bibitem{sheehan2016deep}
+S. Sheehan, Y.~S. Song, Deep learning for population genetic inference.
+\newblock {\em\protect\JournalTitle{PLoS Comput. Biol.}} \textbf{12}, e1004845
+  (2016).
+
+\bibitem{battey_predicting_2020}
+C. Battey, P.~L. Ralph, A.~D. Kern, Predicting geographic location from genetic
+  variation with deep neural networks.
+\newblock {\em\protect\JournalTitle{eLife}} \textbf{9}, e54507 (2020).
+
+\bibitem{kern2018diplos}
+A.~D. Kern, D.~R. Schrider, {diploS/HIC}: an updated approach to classifying
+  selective sweeps.
+\newblock {\em\protect\JournalTitle{G3 (Bethesda)}} \textbf{8}, 1959--1970
+  (2018).
+
+\bibitem{flagel_unreasonable_2019}
+L. Flagel, Y. Brandvain, D.~R. Schrider, The unreasonable effectiveness of
+  convolutional neural networks in population genetic inference.
+\newblock {\em\protect\JournalTitle{Mol. Biol. Evol.}} \textbf{36}, 220--238
+  (2019).
+
+\bibitem{torada_imagene_2019}
+L. Torada, et~al., {ImaGene}: a convolutional neural network to quantify
+  natural selection from genomic data.
+\newblock {\em\protect\JournalTitle{BMC Bioinformatics}} \textbf{20}, 337
+  (2019).
+
+\bibitem{sanchez_deep_2021}
+T. Sanchez, J. Cury, G. Charpiat, F. Jay, Deep learning for population size
+  history inference: Design, comparison and combination with approximate
+  {Bayesian} computation.
+\newblock {\em\protect\JournalTitle{Mol. Ecol. Resour.}} \textbf{21},
+  2645--2660 (2021).
+
+\bibitem{whitehouse2023timesweeper}
+L.~S. Whitehouse, D.~R. Schrider, Timesweeper: accurately identifying selective
+  sweeps using population genomic time series.
+\newblock {\em\protect\JournalTitle{Genetics}} \textbf{224}, iyad084 (2023).
+
+\bibitem{smith2023dispersal}
+C.~C. Smith, S. Tittes, P.~L. Ralph, A.~D. Kern, Dispersal inference from
+  population genetic variation using a convolutional neural network.
+\newblock {\em\protect\JournalTitle{Genetics}} \textbf{224}, iyad068 (2023).
+
+\bibitem{smith2023dispersenn2}
+C.~C. Smith, A.~D. Kern, {disperseNN2}: a neural network for estimating
+  dispersal distance from georeferenced polymorphism data.
+\newblock {\em\protect\JournalTitle{BMC Bioinformatics}} \textbf{24}, 385
+  (2023).
+
+\bibitem{nait_saada_inference_2023}
+J.~N. Saada, Z. Tsangalidou, M. Stricker, P.~F. Palamara, Inference of
+  coalescence times and variant ages using convolutional neural networks.
+\newblock {\em\protect\JournalTitle{Mol. Biol. Evol.}} \textbf{40}, msad211
+  (2023).
+
+\bibitem{adrion2020predicting}
+J.~R. Adrion, J.~G. Galloway, A.~D. Kern, Predicting the landscape of
+  recombination using deep learning.
+\newblock {\em\protect\JournalTitle{Mol. Biol. Evol.}} \textbf{37}, 1790--1808
+  (2020).
+
+\bibitem{battey2021visualizing}
+C. Battey, G.~C. Coffing, A.~D. Kern, Visualizing population structure with
+  variational autoencoders.
+\newblock {\em\protect\JournalTitle{G3 (Bethesda)}} \textbf{11}, jkaa036
+  (2021).
+
+\bibitem{mo2023domain}
+Z. Mo, A. Siepel, Domain-adaptive neural networks improve supervised machine
+  learning based on simulated population genetic data.
+\newblock {\em\protect\JournalTitle{PLoS Genet.}} \textbf{19}, e1011032 (2023).
+
+\bibitem{Radford2018ImprovingLU}
+A. Radford, K. Narasimhan, Improving language understanding by generative
+  pre-training.
+\newblock (2018).
+
+\bibitem{benegas2025dna}
+G. Benegas, C. Albors, A.~J. Aw, C. Ye, Y.~S. Song, A {DNA} language model
+  based on multispecies alignment predicts the effects of genome-wide variants.
+\newblock {\em\protect\JournalTitle{Nat. Biotechnol.}} \textbf{43}, 1960--1965
+  (2025).
+
+\bibitem{brixi2025genome}
+G. Brixi, et~al., Genome modeling and design across all domains of life with
+  {Evo} 2.
+\newblock {\em\protect\JournalTitle{bioRxiv}} pp. 2025--02 (2025).
+
+\bibitem{10002010map}
+{1000 Genomes Project Consortium}, A map of human genome variation from
+  population scale sequencing.
+\newblock {\em\protect\JournalTitle{Nature}} \textbf{467}, 1061 (2010).
+
+\bibitem{auton20151000}
+A. Auton, T. Salcedo, The 1000 genomes project in {\em Assessing Rare Variation
+  in Complex Traits}.
+\newblock (Springer), pp. 71--85 (2015).
+
+\bibitem{anopheles2017genetic}
+{Anopheles gambiae 1000 Genomes Consortium}, Genetic diversity of the {African}
+  malaria vector {Anopheles} gambiae.
+\newblock {\em\protect\JournalTitle{Nature}} \textbf{552}, 96 (2017).
+
+\bibitem{clarkson2020genome}
+C.~S. Clarkson, et~al., Genome variation and population structure among 1142
+  mosquitoes of the {African} malaria vector species {Anopheles} gambiae and
+  {Anopheles} coluzzii.
+\newblock {\em\protect\JournalTitle{Genome Res.}} \textbf{30}, 1533--1546
+  (2020).
+
+\bibitem{deng2025general}
+Y. Deng, Y.~S. Song, R. Nielsen, A general framework for branch length
+  estimation in ancestral recombination graphs.
+\newblock {\em\protect\JournalTitle{Proc. Natl. Acad. Sci. U.S.A.}}
+  \textbf{122}, e2504461122 (2025).
+
+\bibitem{grau2020evolution}
+X. Grau-Bov{\'e}, et~al., Evolution of the insecticide target {Rdl} in
+  {African} {Anopheles} is driven by interspecific and interkaryotypic
+  introgression.
+\newblock {\em\protect\JournalTitle{Mol. Biol. Evol.}} \textbf{37}, 2900--2917
+  (2020).
+
+\bibitem{swallow2003genetics}
+D.~M. Swallow, Genetics of lactase persistence and lactose intolerance.
+\newblock {\em\protect\JournalTitle{Annu. Rev. Genet.}} \textbf{37}, 197--219
+  (2003).
+
+\bibitem{tishkoff2007convergent}
+S.~A. Tishkoff, et~al., Convergent adaptation of human lactase persistence in
+  {Africa} and {Europe}.
+\newblock {\em\protect\JournalTitle{Nat. Genet.}} \textbf{39}, 31--40 (2007).
+
+\bibitem{bersaglieri2004genetic}
+T. Bersaglieri, et~al., Genetic signatures of strong recent positive selection
+  at the lactase gene.
+\newblock {\em\protect\JournalTitle{Am. J. Hum. Genet.}} \textbf{74},
+  1111--1120 (2004).
+
+\bibitem{itan2009origins}
+Y. Itan, A. Powell, M.~A. Beaumont, J. Burger, M.~G. Thomas, The origins of
+  lactase persistence in {Europe}.
+\newblock {\em\protect\JournalTitle{PLoS Comput. Biol.}} \textbf{5}, e1000491
+  (2009).
+
+\bibitem{peter2012distinguishing}
+B.~M. Peter, E. Huerta-Sanchez, R. Nielsen, Distinguishing between selective
+  sweeps from standing variation and from a de novo mutation.
+\newblock {\em\protect\JournalTitle{PLoS Genet.}} \textbf{8}, e1003011 (2012).
+
+\bibitem{hedrick1998balancing}
+P.~W. Hedrick, Balancing selection and {MHC}.
+\newblock {\em\protect\JournalTitle{Genetica}} \textbf{104}, 207--214 (1998).
+
+\bibitem{azevedo2015trans}
+L. Azevedo, C. Serrano, A. Amorim, D.~N. Cooper, Trans-species polymorphism in
+  humans and the great apes is generally maintained by balancing selection that
+  modulates the host immune response.
+\newblock {\em\protect\JournalTitle{Hum. Genomics}} \textbf{9}, 21 (2015).
+
+\bibitem{fortier2025ancient}
+A.~L. Fortier, J.~K. Pritchard, Ancient trans-species polymorphism at the major
+  histocompatibility complex in primates.
+\newblock {\em\protect\JournalTitle{eLife}} \textbf{14}, RP103547 (2025).
+
+\bibitem{love2016chromosomal}
+R.~R. Love, et~al., Chromosomal inversions and ecotypic differentiation in
+  {Anopheles} gambiae: the perspective from whole-genome sequencing.
+\newblock {\em\protect\JournalTitle{Mol. Ecol.}} \textbf{25}, 5889--5906
+  (2016).
+
+\bibitem{fontaine2015extensive}
+M.~C. Fontaine, et~al., Extensive introgression in a malaria vector species
+  complex revealed by phylogenomics.
+\newblock {\em\protect\JournalTitle{Science}} \textbf{347}, 1258524 (2015).
+
+\bibitem{ffrench1993point}
+R.~H. Ffrench-Constant, T.~A. Rocheleau, J.~C. Steichen, A.~E. Chalmers, A
+  point mutation in a {Drosophila} {GABA} receptor confers insecticide
+  resistance.
+\newblock {\em\protect\JournalTitle{Nature}} \textbf{363}, 449--451 (1993).
+
+\bibitem{thompson1993conservation}
+M. Thompson, J. Steichen, R. Ffrench-Constant, Conservation of cyclodiene
+  insecticide resistance-associated mutations in insects.
+\newblock {\em\protect\JournalTitle{Insect Mol. Biol.}} \textbf{2}, 149--154
+  (1993).
+
+\bibitem{du2005independent}
+W. Du, et~al., Independent mutations in the {Rdl} locus confer dieldrin
+  resistance to {Anopheles} gambiae and {An}. arabiensis.
+\newblock {\em\protect\JournalTitle{Insect Mol. Biol.}} \textbf{14}, 179--183
+  (2005).
+
+\bibitem{elliott1956insecticide}
+R. Elliott, V. Ramakrishna, Insecticide resistance in {Anopheles} gambiae
+  {Giles}.
+\newblock {\em\protect\JournalTitle{Nature}} \textbf{177}, 532--533 (1956).
+
+\bibitem{davidson1962case}
+G. Davidson, J. Hamon, A case of dominant dieldrin resistance in {Anopheles}
+  gambiae {Giles}.
+\newblock {\em\protect\JournalTitle{Nature}} \textbf{196}, 1012--1012 (1962).
+
+\bibitem{radford_language_2019}
+A. Radford, et~al., Language models are unsupervised multitask learners.
+\newblock (2019).
+
+\bibitem{vaswani_attention_2017}
+A. Vaswani, et~al., Attention is all you need (2017).
+
+\bibitem{su_roformer_2023}
+J. Su, et~al., {RoFormer}: Enhanced transformer with rotary position embedding
+  (2023) arXiv:2104.09864.
+
+\end{thebibliography}

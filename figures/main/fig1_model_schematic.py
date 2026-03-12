@@ -85,14 +85,14 @@ def main():
     def calculate_mean_std(data):
         return np.mean(data, axis=0), np.std(data, axis=0)
 
-    yhat_mean1, yhat_std1 = calculate_mean_std(yhats[:, :2, :])
-    ytrue_mean1 = np.mean(ytrues[:, :2, :], axis=0)
-    yhat_mean2, yhat_std2 = calculate_mean_std(yhats[:, -2:, :])
-    ytrue_mean2 = np.mean(ytrues[:, -2:, :], axis=0)
+    yhat_mean1, yhat_std1 = calculate_mean_std(yhats[:, :1, :])
+    ytrue_mean1 = np.mean(ytrues[:, :1, :], axis=0)
+    yhat_mean2, yhat_std2 = calculate_mean_std(yhats[:, -1:, :])
+    ytrue_mean2 = np.mean(ytrues[:, -1:, :], axis=0)
 
     fig, axs = plt.subplots(
-        5, 1, figsize=(8, 8),
-        gridspec_kw={"height_ratios": [1, 1, 0.5, 1, 1], "hspace": 0.5},
+        3, 1, figsize=(8, 5),
+        gridspec_kw={"height_ratios": [1, 0.4, 1], "hspace": 0.5},
     )
 
     def millions(x, pos):
@@ -100,9 +100,7 @@ def main():
 
     panels = [
         (axs[0], yhat_mean1[0], yhat_std1[0], ytrue_mean1[0], "[1/1225]"),
-        (axs[1], yhat_mean1[1], yhat_std1[1], ytrue_mean1[1], "[2/1225]"),
-        (axs[3], yhat_mean2[0], yhat_std2[0], ytrue_mean2[0], "[1224/1225]"),
-        (axs[4], yhat_mean2[1], yhat_std2[1], ytrue_mean2[1], "[1225/1225]"),
+        (axs[2], yhat_mean2[0], yhat_std2[0], ytrue_mean2[0], "[1225/1225]"),
     ]
 
     for ax, mean, std, true, title in panels:
@@ -116,19 +114,19 @@ def main():
         ax.grid(True, alpha=0.25)
         ax.tick_params(labelbottom=False)
 
-    axs[2].plot([])
-    axs[2].set_xlim(0, 1)
-    axs[2].set_ylim(0, 1)
-    axs[2].set_title("[3-1223]", fontsize=fontsize, loc="left")
-    axs[2].text(0.5, 0.5, "[3-1223]", ha="center", va="center", fontsize=12, alpha=0.6)
-    for spine in axs[2].spines.values():
+    axs[1].plot([])
+    axs[1].set_xlim(0, 1)
+    axs[1].set_ylim(0, 1)
+    axs[1].set_title("[2-1224]", fontsize=fontsize, loc="left")
+    axs[1].text(0.5, 0.5, "[2-1224]", ha="center", va="center", fontsize=12, alpha=0.6)
+    for spine in axs[1].spines.values():
         spine.set_linestyle("--")
-    axs[2].grid(False)
-    axs[2].tick_params(labelbottom=False)
+    axs[1].grid(False)
+    axs[1].tick_params(labelbottom=False)
 
-    axs[4].xaxis.set_major_formatter(FuncFormatter(millions))
-    axs[4].tick_params(labelbottom=True)
-    axs[4].set_xlabel("Sequence [bp]", fontsize=fontsize)
+    axs[2].xaxis.set_major_formatter(FuncFormatter(millions))
+    axs[2].tick_params(labelbottom=True)
+    axs[2].set_xlabel("Sequence [bp]", fontsize=fontsize)
 
     fig.text(0.04, 0.5, "Time [generations]", va="center", rotation="vertical", fontsize=fontsize)
     plt.tight_layout(rect=[0.05, 0.05, 1, 1])

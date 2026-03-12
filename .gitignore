@@ -56,3 +56,17 @@ __pycache__/
 .verification/checkpoints/
 .verification/test_input.vcf
 .verification/verification_figure.png
+
+# Verification: large caches and generated comparison plots
+.verification/cache_rdl/
+.verification/correction_comparison/
+.verification/fig8_comparison/
+
+# Paper: staging copies, compiled PDFs, nested git repos
+cxt_paper/download/
+cxt_paper/cxtkit_manuscript/.git/
+cxt_paper/.git/
+cxt_paper/2025.06.24.661337.full.pdf
+cxt_paper/.git_backup/
+cxt_paper/cxtkit_manuscript/.git_backup/
+cxt_paper/cxt_supplementary/.git_backup/

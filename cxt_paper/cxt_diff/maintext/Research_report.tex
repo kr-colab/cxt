@@ -1,0 +1,960 @@
+\documentclass[9pt,twocolumn,twoside]{pnas-new}
+\templatetype{pnasresearcharticle}
+
+\usepackage{amsmath,amssymb}
+\usepackage{dblfloatfix}
+\usepackage{xspace}
+\setcounter{secnumdepth}{0}
+
+\title{Coalescence and Translation: A Language Model for Population Genetics}
+
+\author[a,c,1]{Kevin Korfmann}
+\author[a]{Nathaniel S. Pope}
+\author[b]{Melinda Meleghy}
+\author[b]{Aur\'elien Tellier}
+\author[a]{Andrew D. Kern}
+
+\affil[a]{Institute of Ecology and Evolution, University of Oregon, Eugene, OR 97403, USA}
+\affil[b]{Department of Life Science Systems, Technical University of Munich, 85354 Freising, Germany}
+\affil[c]{Department of Biology, University of Pennsylvania, Philadelphia, PA 19104, United States}
+
+\leadauthor{Korfmann}
+
+\significancestatement{%
+\texttt{cxt} is a language model for population genetics which introduces next-coalescence prediction as translation from observed mutations to coalescence times by modeling the coalescent with recombination as a conditional stochastic process. It learns implicit priors from \texttt{stdpopsim} and generalizes across both known and novel demographies. \texttt{cxt} generates millions of TMRCA estimates in minutes and samples well-calibrated posteriors for uncertainty quantification. A simple post-hoc correction aligns predicted diversity with the species mutation rate, ensuring robustness to novel evolutionary scenarios.}
+
+\authorcontributions{K.K. designed and implemented the method, conducted all analyses, and wrote the manuscript. N.S.P. contributed to method development and manuscript writing. M.M. and A.T. contributed to manuscript writing and early software feedback. A.D.K. supervised the project and contributed to manuscript writing.}
+\authordeclaration{The authors declare no competing interests.}
+\correspondingauthor{\textsuperscript{1}To whom correspondence should be addressed. E-mail: korfmann@sas.upenn.edu}
+
+\keywords{Language models $|$ coalescent theory $|$ uncertainty $|$ stdpopsim $|$ simulation-based inference}
+
+\begin{abstract}
+Probabilistic models such as the sequentially Markovian coalescent (SMC) 
+have long provided a powerful framework for population genetic inference,
+enabling reconstruction of demographic history and ancestral relationships from genomic data.
+However, these methods are inherently specialized, relying on predefined assumptions and/or limited scalability. 
+Recent advances in simulation and deep learning provide an alternative approach:
+learning directly to generalize from synthetic genetic data to infer specific hidden evolutionary processes.
+Here we reframe the inference of coalescence times as a problem of translation between 
+two biological languages: the sparse, observable patterns of mutation along the genome
+and the unobservable ancestral recombination graph (ARG) that gave rise to them. 
+Inspired by large language models, we develop \texttt{cxt}, a decoder-only transformer that 
+autoregressively predicts coalescent events conditioned on local mutational context.
+We show that \texttt{cxt} performs competitively with state-of-the-art MCMC-based likelihood models across a broad range of demographic scenarios, matching their accuracy in-distribution and approaching it in out-of-distribution settings, with the potential for further improvement via targeted fine-tuning.
+Trained on simulations spanning the \texttt{stdpopsim} catalog, the model generalizes robustly and enables efficient inference at scale,  
+producing over a million coalescence predictions in minutes.
+In addition \texttt{cxt} produces a well calibrated approximate posterior distribution of its predictions,
+enabling principled uncertainty quantification.
+We apply \texttt{cxt} to population genomic data from both humans and mosquitoes, 
+highlighting the model's ability to deal with the complexities of empirical data.
+\end{abstract}
+
+\dates{This manuscript was compiled on \today}
+\doi{\url{www.pnas.org/cgi/doi/10.1073/pnas.XXXXXXXXXX}}
+
+\begin{document}
+% Custom commands
+\newcommand{\cxtkit}{\texttt{cxt}\xspace}
+\newcommand{\msprime}{\texttt{msprime}}
+\newcommand{\stdpopsim}{\texttt{stdpopsim}\xspace}
+\newcommand{\singer}{\texttt{Singer}\xspace}
+\newcommand{\gammamc}{\texttt{Gamma-SMC}}
+\newcommand{\smcpp}{\texttt{SMC++}\xspace}
+
+\maketitle
+\thispagestyle{firststyle}
+\ifthenelse{\boolean{shortarticle}}{\ifthenelse{\boolean{singlecolumn}}{\abscontentformatted}{\abscontent}}{}
+
+\Firstpage
+
+% Introduction (no heading per PNAS convention)
+The stochastic process of genetic lineages tracing back to common ancestors over time gives rise to a complex structure known as the Ancestral Recombination Graph (ARG), with branches that merge through coalescence or divide
+through recombination \cite{kingman_coalescent_1982, hudson_properties_1983, griffiths_ancestral_1997, griffiths_two-locus_1991}. 
+In the absence of mutations, these branches remain entirely concealed. 
+However, mutations along the branches of the genealogy offer only a noisy, indirect window into this hidden ARG, 
+carrying partial information about topology and the timing of events.
+Currently the field of population genetics is undergoing a revolution in our ability to infer the ARG that underlies
+a sample, and over the past few years we have obtained our first glimpses into reconstructions of whole genome genealogies \cite{kelleher_inferring_2019, speidel_method_2019, zhang2023biobank, deng_robust_2024}. 
+
+Inferring the ARG (or approximations of it) has long been a central goal in population genetics.
+One of the earliest attempts was by Griffiths and Marjoram \cite{griffiths_ancestral_1996}, 
+who used Markov chain simulations of the coalescent process for ancestral inference.
+Subsequent work conceptualizing recombination as a point process along the genome \cite{wiuf_recombination_1999},
+shifted focus toward emphasizing the spatial aspects of recombination,
+and laid the groundwork for more efficient approximations of the coalescent with recombination such as the sequentially Markovian coalescent (SMC) \cite{mcvean_approximating_2005}.
+The SMC approximation has been pivotal in the development of numerous inference methods, 
+beginning with approaches requiring only a single diploid genome to investigate demographic changes,
+such as PSMC \cite{li_inference_2011} (which effectively infers an ARG for two haploid samples). \Parasplit
+Since then, SMC-type methods have been extended in numerous ways including: 
+to multiple genomes \cite{schiffels_inferring_2014, malaspinas_genomic_2016}, 
+integration of site-frequency spectrum information \cite{terhorst_robust_2017},
+the inclusion of species-specific life-history traits 
+\cite{sellinger_inference_2020,korfmann_simultaneous_2024, sellinger_improved_2024},
+as well as algorithms that more efficiently scale as a function of sample size \cite{palamara_high-throughput_2018, schweiger_ultra-fast_2023, terhorst_accelerated_2024}. 
+
+While the SMC approximation enables tractable likelihood-based inference for a restricted class of models, 
+it becomes increasingly difficult to extend when key evolutionary processes, such as population structure, selection, or complex demographic events are introduced. 
+Simulation-based inference (SBI) offers a flexible alternative by bypassing explicit likelihoods 
+and instead learning mappings from data to model parameters directly from simulated datasets.
+Approximate Bayesian computation (ABC) is  a widely used SBI framework in population genetics \cite{beaumont_approximate_2002}, and has been successfully applied to a range of inference problems, including demographic history reconstruction \cite{boitard_inferring_2016, jay_abc_2019}. 
+
+However, classical ABC methods rely on reducing data to low-dimensional summary statistics 
+in order to mitigate the curse of dimensionality, 
+often discarding information relevant to inference in the process. 
+This limitation is particularly acute for sequence-based problems involving recombination, 
+where genealogical information is distributed across long, high-dimensional haplotypic sequences. 
+In such settings, exemplified by PSMC-like models, information loss during data compression can substantially limit
+predictive accuracy and robustness, 
+motivating the development of inference approaches that operate directly on high-dimensional sequence data (see, 
+however, \cite{min2025neural}).
+
+A powerful alternative to standard ABC is to utilize deep learning (DL) for simulation-based inference, which has
+proven broadly effective across diverse domains \cite{schmidhuber_annotated_2022}. 
+In population genetics, DL-based methods have been successfully applied to a wide range of model-based inference tasks \cite{korfmann_deep_2023}, 
+leveraging standard neural network architectures including fully connected networks \cite{sheehan2016deep,battey_predicting_2020},
+convolutional neural networks \cite{kern2018diplos, flagel_unreasonable_2019, torada_imagene_2019, sanchez_deep_2021, whitehouse2023timesweeper, smith2023dispersal, smith2023dispersenn2, nait_saada_inference_2023}, recurrent neural networks \cite{adrion2020predicting}, and
+variational autoencoders \cite{battey2021visualizing}. 
+However, most existing DL approaches in population genetics are trained for narrow, task-specific objectives,
+such as estimating individual demographic parameters,
+and often fail to generalize beyond the distribution of their training simulations. 
+While domain adaptation strategies can partially mitigate this limitation \cite{mo2023domain}, 
+they do not fundamentally address the challenge of learning transferable representations of the underlying evolutionary process.
+
+More recently, transformer-based language models have been introduced
+that enhance prediction capabilities through the learning of stochastic processes,
+rather than scenario-constrained parameter estimation \cite{nait_saada_inference_2023}.
+Inspired by pretrained generative models such as GPT \cite{Radford2018ImprovingLU},
+we leverage this paradigm with a small model (10--20M parameters) that translates
+mutational patterns across chromosomes to coalescent time estimates,
+opening the door to a generalizable approach: pretraining on diverse coalescent simulations,
+followed by fine-tuning for specific evolutionary tasks if necessary.
+
+In this work, we introduce \cxtkit, the first language model for coalescent estimation to our knowledge. \cxtkit is a decoder-only transformer model inspired by GPT-2 and designed for pairwise time to the most recent common ancestor (TMRCA) prediction \textemdash a core component of genealogical inference. 
+In contrast to DNA language models such as GPN-MSA or Evo 2  \cite{benegas2025dna, brixi2025genome} 
+that are pretrained on the task of masked base prediction from a collection of sequenced genomes, 
+our pretext task leverages synthetic data simulated under explicit population genetic models to predict the \emph{next} pairwise TMRCA along a sequence. 
+Rather than modeling DNA sequences itself, \cxtkit aims to recover latent genealogical structure, providing a flexible and generalizable model for downstream inference. 
+To enable this inference, we define a novel task analogous to \textit{next-token prediction},
+which we term \textit{next-coalescence prediction}: the model autoregressively predicts
+the next pairwise coalescence time conditioned on local mutation densities within a fixed
+context window. While this does not reconstruct full genealogical topologies, it provides
+a structured translation from observed mutation patterns to pairwise coalescence times.
+Conceptually, \cxtkit is a close neural analog of \smcpp: prediction is centered on a
+pivot (distinguished) pair, with information shared across haplotypes through the SFS.
+
+To evaluate this approach, we focused on three criteria:
+(1) \textbf{accuracy}, performance comparable to or better than recent theory-driven methods such as \singer and \smcpp;
+(2) \textbf{robustness}, particularly under model misspecification and out-of-distribution scenarios; and
+(3) \textbf{capacity}, the ability to generalize across a diverse range of simulated evolutionary scenarios.
+
+
+Using extensive simulations and applications to human and mosquito genomic variation data,
+we show that \cxtkit provides competitive performance for
+inferring local coalescence times across recombining chromosomes,
+with efficient parallel GPU inference.
+The generative nature of \cxtkit enables rapid sampling of an approximate posterior over TMRCA trajectories,
+providing uncertainty estimates that are well calibrated.
+Across a wide range of models, including nearly the full \stdpopsim catalog,
+\cxtkit maintains reasonable out-of-sample performance, though with some loss in accuracy relative to likelihood-based methods, and can be further improved via targeted fine-tuning.
+Finally, we apply \cxtkit to large-scale human and \textit{Anopheles} population genomic data
+\cite{10002010map, auton20151000, anopheles2017genetic, clarkson2020genome},
+recovering known coalescent-time outliers in humans and time-resolved signals consistent with insecticide resistance dynamics in mosquitoes.
+
+\section*{Results}
+
+We begin by presenting a conceptual schematic that adapts the general language modeling paradigm to population genetics, and draw parallels with SMC-based coalescent modeling to define our next-coalescence prediction task (Figure~1). We then benchmark \cxtkit's accuracy against current fast inference 
+methods, specifically \singer and \smcpp \cite{deng_robust_2024, terhorst_robust_2017}. 
+Next, we evaluate the model's cross-scenario generalization capabilities, 
+training and evaluating using the nearly complete \stdpopsim v0.2 and v0.3 catalogs across diverse species, demographic scenarios, and genetic maps (excluding only bacteria and two species with extreme recombination rates that preclude large-scale simulation and three models with ancient samples). 
+We assess the global accuracy of TMRCA prediction by comparing true and estimated coalescence rates across simulations. 
+Finally, we apply \cxtkit to real genomic data, estimating coalescent times across two
+chromosomes from the 1000 Genomes Project, using pairs of haploid sequences of British ancestry as our focal samples and chromosome 2L of \textit{Anopheles} from samples taken from Cameroon, Mali, Burkina Faso, Ghana and Uganda.
+
+
+
+
+\subsection*{Fast and Accurate Inference}
+
+We developed \cxtkit, a decoder-only transformer architecture adapted for the task of inferring local coalescence times from mutation patterns across recombining genomes. Unlike 
+language models that embed discrete tokens, \cxtkit projects continuous mutation densities into a latent space using feed-forward networks, followed by attention-based contextualization. Rotary positional embeddings encode physical distance along the genome, allowing the model to capture locality in genealogical relationships. Trained using a next-coalescence prediction objective, \cxtkit captures the stochasticity of evolutionary processes while achieving rapid and accurate inference.
+
+
+We show a descriptive schematic of the model in the left panel of Figure~1.  
+\cxtkit follows a general language modeling paradigm in which the model predicts 
+a discretized coalescent time for each genomic window based on preceding predictions 
+and the local mutational context. Specifically, we divide the genome into fixed-size 
+positional windows and discretize coalescent times into bins on a 
+logarithmic scale. Given a sequence of ground truth discretized pairwise TMRCA values  
+\( E = (e_1, e_2, \dots, e_n) \), the model autoregressively learns the conditional 
+distribution:
+
+\[
+P(E \mid \text{MC}) = \prod_{i=1}^{n} P(e_i \mid \hat{e}_{<i}, \text{MC}),
+\]
+ 
+where \( \hat{e}_{<i} \) represents the model's stochastic predictions for the preceding windows and \( \text{MC} \) denotes the mutational context (the observed data) across all windows. Concretely, the mutational context in a given window is the site frequency spectrum calculated across all samples, partitioned into the contributions from sites that are heterozygous and sites that are homozygous in the pivot pair.
+
+At each genomic window \( i \), the model outputs a probability distribution over 
+discretized TMRCA bins:
+
+\[
+\hat{e}_i \sim P_\theta(e_i \mid \hat{e}_{<i}, \text{MC}),
+\]
+
+with \( P_\theta \) parameterized by a neural network with weights $\theta$. The training objective is to maximize the log probability of the true sequence given the (preceding) predicted sequence:
+
+\[
+ \mathcal{L}(\theta) = \sum_{i=1}^{n} \log P_\theta(e_i \mid \hat{e}_{<i}, \text{MC}),
+\]
+
+where \( e_i \) denotes the ground truth label in window \( i \), and \( \hat{e}_{<i} \) 
+are the model's own predictions up to (but not including) window $i$. Predictions are then 
+centered around an intercept (log expected total diversity), which is sampled from the 
+posterior distribution conditional on observed total diversity assuming a Poisson model of 
+mutation.
+%, which represents a recommended post‑hoc calibration to ensure out‑of‑training‑distribution reliability and, by extension, out‑of‑\stdpopsim distribution reliability.
+This objective encourages the model to learn a mapping from local mutation patterns to
+genealogical structure, enabling accurate sequential inference of coalescent events across the genome.
+
+The right panel of Figure~1 illustrates \cxtkit on a constant-size scenario
+($N_e = 2 \times 10^{4}$, roughly equal mutation and recombination rates; see Datasets).
+All $\binom{50}{2}$ pivot pairs of 50 haploid chromosomes are inferred in parallel;
+for each pair the generative process is repeated 15 times, yielding samples from an approximate
+posterior over pairwise coalescence times along the sequence
+(where the prior is implicit via the simulated training set; see Calibration).
+Averaging across replicates produces stable estimates.
+In this well-specified setting \cxtkit is highly accurate,
+and inference for all pairs completes in approximately five minutes on a single NVIDIA A100 GPU.
+
+
+\subsection*{Benchmark Comparisons}
+
+To evaluate \cxtkit's performance, we benchmarked its accuracy against two approaches 
+\singer and \smcpp \cite{deng_robust_2024, terhorst_robust_2017}, selected for their 
+accuracy and broad adoption, respectively.
+
+We first consider the performance of our ``narrow model,'' a \cxtkit{}
+model trained on a constant-sized population (\(N_e = 2 \times 10^{4}\))
+with equal mutation and recombination rates (see Datasets).
+In Figure~2, we aim to demonstrate two main results.
+First, we show the performance of the narrow model (\textbf{cxt}-narrow, top-left)
+on its original training domain, constant population size with roughly equal
+mutation and recombination rates, which yields a mean squared error (MSE) of 0.2531.
+As expected, \textbf{cxt}-narrow's predictive accuracy declines when evaluated
+outside this domain. The top-middle panel shows results under a fluctuating
+population-size model (the sawtooth scenario; MSE 0.7496); thus, model
+misspecification degrades performance.
+We can potentially mitigate this behavior by training \cxtkit{} on a wider range
+of parameters and demographic histories. To do so, we introduce a ``broad model,''
+\textbf{cxt}-broad (top-right), trained on a substantially wider range of scenarios
+(see Datasets). 
+\textbf{cxt}-broad, because it can accommodate demographic variation,
+achieves improved accuracy on the sawtooth model (MSE 0.1796). 
+
+
+Singer, combined with its dating-refinement algorithm Polegon (\textbf{Singer+Polegon}), 
+attains comparable accuracy on the constant-size scenario (Figure~2 bottom-left; MSE 0.2470)
+and slightly reduced accuracy under the sawtooth model (MSE 0.2129). 
+\textbf{SMC++}, which is primarily designed for demographic history inference with 
+TMRCA decoding provided as part of its composite-likelihood framework, 
+yields higher MSE values for these simulations (0.8685 and 1.7919), 
+reflecting its emphasis on population-size reconstruction rather than fine-scale local genealogy prediction.
+
+Because \cxtkit is trained at a fixed sample size, users with larger samples can subsample,
+while for smaller samples we provide a lightweight adapter that fine-tunes the pretrained model
+to the target cohort size.
+SI Appendix, Fig.~S4 shows adapter results transferring from $N=25$ to $N=5$ diploids
+on both the constant-size and sawtooth scenarios.
+
+
+%%%% put after stdpopsim data introduction
+%One advantage of the language model approach we take with \cxtkit is that any neural model
+%can be subsequently fine-tuned for specific scenarios not covered in the original training set.
+%To demonstrate this, we adapted \cxtkit-broad by fine-tuning it to different sample sizes (2n=10), and training it on large population sizes
+
+
+
+Our results demonstrate that the language modeling approach implemented in \cxtkit is competitive with
+the most recent theory-driven methods, whether ARG-based (as in \singer) or SMC-based (as in \smcpp), in these well-specified settings.
+A full summary of error estimates is provided in SI Appendix, Table~S6 and Figure~2.
+
+
+
+
+
+\subsection*{Computational Efficiency and Scaling}
+
+We compared wall-clock runtimes of \cxtkit with \smcpp and \singer across increasing numbers of inferred pairwise coalescence trajectories (SI Appendix, Fig.~S6). 
+Overall, \cxtkit exhibits approximately linear scaling in the number of inferred pairs and near-linear speedups with additional GPUs, while likelihood- and MCMC-based methods incur substantially higher and more parameter-sensitive computational costs. 
+Detailed runtime breakdowns and scaling analyses are provided in the SI Appendix.
+
+
+
+\subsection*{Towards a generalizable deep learning model}
+In the previous section, we focused primarily on the setting in which \cxtkit is trained on a single demographic model (\cxtkit-narrow), 
+thereby learning directly from simulated data, while also providing a preview of \cxtkit-broad's potential.
+The central advantage of a language-modeling approach is its capacity, through many learnable parameters,
+to move beyond narrowly specified generative assumptions by conditioning its behavior 
+on a rich set of mutational and genealogical contexts.
+In this sense, \cxtkit functions as a flexible conditional density estimator: for a given context, it produces a corresponding predictive distribution. 
+We assess this directly by comparing inferred marginal coalescence-time distributions across species.
+
+%This is similar in spirit to likelihood-based methods, where $P(\text{TMRCA} \mid \text{local data})$ is also context-dependent. 
+%However, the distinction here is architectural: in $\cxtkit$, the model has no explicit likelihood function; instead, it learns an implicit mapping from mutation patterns to TMRCA via autoregressive conditioning, potentially capturing richer dependencies without being bound to predefined parametric forms.
+
+In SI Appendix, Fig.~S7, we report inferred coalescence time distributions across nearly all \stdpopsim v0.2 species. 
+For each species, we simulate under its published demographic model when available, and otherwise assume a constant population size.
+Results from simulations using fine-scale recombination maps are given separately in SI Appendix, Fig.~S8.
+All results shown here are based on the \cxtkit-broad model (see Datasets), which was trained across the full set of scenarios.
+Importantly, the evaluations in SI Appendix, Figs.~S7 and S8 are performed on newly generated simulations
+that were not included in training, eliminating any opportunity for data leakage. 
+Across nearly all species, the inferred distributions (blue) closely match the true distributions (black).
+
+
+To promote generalization across demographic and rate regimes, 
+we made a deliberate design choice during training: 
+we keep the window size fixed at 2\,kb while varying $N_e$ over several orders of magnitude.
+In principle, one might expect the window size to scale with the effective population size, 
+since the expected numbers of mutations and recombination events per window scale with $N_e$. 
+However, by intentionally not adapting the window size, the model encounters windows that can be
+mutation-dense or mutation-sparse depending on the underlying $N_e$. 
+This encourages the model to learn \emph{relative} changes in local coalescent structure rather than relying on absolute mutation counts;
+any global offset can be corrected during inference by calibrating to the mutation rate.
+
+A related consideration is how well the mean coalescent time within a window can be estimated. 
+As the window size increases, estimation becomes easier: mutation counts rise, diversity increases, and sampling noise decreases.
+However, larger windows also average over spatial variation in genealogical structure, attenuating signals of population-size change, population structure, and other localized effects.
+
+We illustrate this trade-off in SI Appendix, Fig.~S5. 
+Using 2\,kb windows (left; MSE~0.1096) predicted coalescence times closely track the truth for the \texttt{stdpopsim} \textit{AnoGam} model.
+In contrast, using much smaller 0.2\,kb windows (middle; MSE~0.5727) substantially increases difficulty:
+more frequent recombination induces greater heterogeneity among local genealogies,
+while fewer mutations per window increase variance in the observed signal. 
+Despite the broad model's reasonable performance in this setting, 
+we further fine-tune it on \texttt{stdpopsim} species with $N_e > 10^5$ (SI Appendix, Fig.~S5, right).
+This yields the \texttt{broad~(w200)} model and further reduces prediction error.
+
+
+
+
+\subsection*{Out-of-sample tests for the broad model}
+During this project, \stdpopsim v0.3 was released, expanding the catalog to include additional species 
+(\textit{S.~scrofa, R.~norvegicus, P.~sinus, M.~musculus}, and \textit{G.~gorilla}). 
+We leveraged this release to assess the generalization ability of our broad model, testing performance \emph{without} retraining. 
+Because these species were not present in \stdpopsim v0.2, they constitute genuinely out-of-sample test cases for the broad model.
+
+The v0.3 release includes species spanning a wide range of effective population sizes, from very large populations, 
+such as \emph{S.~scrofa} ($N_e = 270000$) and \emph{R.~norvegicus} ($N_e = 124000$), 
+to much smaller populations, such as \emph{P.~sinus} ($N_e = 3500$). 
+Most of these new species also exhibit recombination rates that exceed mutation rates.
+For example, in  \emph{P. sinus} we have $m=5.83\times10^{-9}$ and $r=1\times10^{-8}$ per bp per generation ($r/m=1.715$).
+A notable exception is \emph{G. gorilla} for which $r=1.193\times10^{-8}$ and $m=1.235\times10^{-8}$, yielding $r/m=0.966$.
+
+
+
+Results from this out-of-sample evaluation are shown in Figure~3. 
+Notably, \cxtkit generalizes well, even when applied to simulations generated under previously unseen regimes 
+of recombination and mutation rates, population sizes and demographic structure.
+Across these v0.3 species, \cxtkit generalizes reasonably well, although \texttt{Singer+Polegon} achieves lower error in most scenarios, in some cases by a substantial margin. Both methods substantially outperform the \smcpp decodings.
+
+
+
+\subsection*{Generalization across parameter regimes}
+
+A central goal of this project was to build a model that spans the diversity of scenarios represented in\stdpopsim, 
+motivated by the idea that as \stdpopsim expands, we can incrementally incorporate new species into training. 
+However, when applying \cxtkit to data from a new species, with potentially different mutation and recombination rates, effective population size or population structure,
+we expect inference accuracy to depend on how similar that species is to the regimes represented in the training data.
+
+We assessed \cxtkit's ability to interpolate and extrapolate beyond the training distribution by evaluating prediction accuracy across a grid of mutation and recombination rates at fixed $N_e = 20{,}000$ (SI Appendix, Fig.~S10).
+The grid is chosen to span most \stdpopsim species; MSE and KL divergence heatmaps show that, as expected, error is highest in the low-mutation, high-recombination regime where the signal-to-noise ratio is least favorable.
+Representative TMRCA predictions from the four corners of the grid (SI Appendix, Fig.~S11) confirm that \cxtkit generalizes beyond the parameter regions represented in training.
+
+
+
+\subsection*{Calibration of approximate posteriors}
+\label{sec:calibration}
+
+In addition to point estimates, \cxtkit produces approximate posterior samples for local TMRCA, enabling uncertainty quantification. 
+We evaluated the frequentist calibration and consistency of these posteriors across multiple demographic scenarios and mutation-rate regimes, including out-of-training species.
+Overall, posterior intervals show near-nominal empirical coverage and contract appropriately with increasing mutational information, with deviations confined to boundary windows where context is truncated.
+Detailed calibration analyses are provided in SI Appendix, Figs.~S2, S3, and S9.
+
+
+
+\subsection*{Demography estimation through coalescence rates}
+
+
+
+Estimating pairwise coalescence rates provides a direct window into changes in effective population size through time,
+perhaps most famously exemplified by the original \texttt{PSMC} model of Li and Durbin (2011). 
+To evaluate our ability to recover effective population size trajectories from \cxtkit predictions, 
+we simulated data under demographic models for \emph{H.~sapiens}, \emph{B.~taurus}, and \emph{A.~thaliana}. From these simulations, we estimated pairwise coalescence-time distributions 
+and converted them into coalescence-rate curves,
+which we then mapped to estimates of historical effective population size (Figure~4; see Methods).
+
+Figure~4 shows five curves.
+The black \emph{expectation} line reflects the true coalescence rate implied by the generative model.
+We also report an \emph{inference limit} in red, constructed by sampling the true TMRCAs every 2\,kb across the sequence
+and then estimating coalescence rates using the same procedure applied to \cxtkit, \singer, and \smcpp,
+thereby providing an upper bound under matched discretization.
+The remaining curves show the corresponding estimates from \cxtkit, \singer, and \smcpp.
+
+Overall, effective population size trajectories inferred from \cxtkit and \singer
+closely track the truth at a genome-wide scale capturing the major epochs of growth/bottlenecks,
+whereas \smcpp shows larger deviations at recent times;
+this gap may reflect limited information in the current setting
+and could plausibly be reduced by incorporating additional data.
+
+
+We also inferred the cross-coalescence rate (i.e., the rate of coalescence between lineages drawn from different demes) 
+under the two-population \texttt{OutOfAfrica\_2T12} model from \stdpopsim.
+Generally, cross-coalescence curves are informative about the timing of divergence 
+and subsequent gene flow between populations within a species.
+SI Appendix, Fig.~S12 summarizes these results.
+The left panel shows the cross-population rate estimated from one African and one European haplotype, 
+whereas the middle  and right panels show the within-population rates for African and European samples, respectively.
+The cross-population curve (left) closely follows the expected trajectory.
+In contrast, the within-population curves exhibit a modest deviation for \cxtkit.
+
+A likely explanation is the way structured models were represented during training:
+for each simulated instance, 50 samples were drawn with random population assignments.
+As a result, training examples rarely contained only a single population,
+which may bias within-population rate estimation.
+This could potentially be mitigated by modifying the training scheme for structured models,
+for example by explicitly including single-deme sampling configurations.
+
+These demographic inferences are based on 10\,Mb of simulated sequence (Figure~4 and SI Appendix, Fig.~S12);
+because shorter sequences truncate the longest tracts of recent ancestry, increasing variance in recent-time rate estimates,
+we expect substantially improved accuracy at full chromosome lengths.
+Overall, \cxtkit's local TMRCA predictions aggregate into accurate genome-scale demographic summaries.
+
+
+\subsection*{Application to Human 1000 Genomes and Ag1000G Mosquito data}
+
+
+
+Having established the accuracy and robustness of \cxtkit across a broad range of simulated scenarios, 
+we next apply it to empirical genomic data: human variation from the 1000 Genomes Project \cite{10002010map} and mosquito genomes from the Ag1000G consortium \cite{anopheles2017genetic}.
+
+We begin with the human dataset, 
+revisiting the canonical selective sweep at \emph{LCT} as a validation benchmark,
+and then turning to more recently dated regions of the \emph{HLA} locus.
+In the latter case,
+our inferred TMRCA patterns are broadly consistent with previously reported old genealogical ages,
+though we infer slightly younger than \texttt{Singer+Polegon}. 
+
+We then analyze the insecticide-resistance loci \emph{Rdl} in \textit{Anopheles gambiae}. 
+This locus has been highlighted using summary-statistic approaches,
+including Garud's $H_1/H_{12}$,
+but a clear time-resolved interpretation of the underlying sweep dynamics has remained elusive. 
+Using \cxtkit, we estimate fine-scale coalescent times across five African populations (Burkina Faso, Mali, Cameroon, Ghana, and Uganda) while addressing three technical challenges characteristic of Ag1000G data, and we compare our mosquito estimates to \texttt{Singer+Polegon}:
+
+\begin{enumerate}
+    \item \textbf{Large effective population sizes}, which yield deep genealogies and correspondingly large scaled mutation and recombination rates;
+    \item \textbf{Small sample sizes} in Ghana (\(<25\) diploid individuals); and
+    \item \textbf{Substantial missing-data variation} across genomic regions
+\end{enumerate}
+
+
+To begin this initial validation in humans, 
+we selected 50 individuals of British descent (GBR), 
+and estimated coalescent times for 25 focal pairs, 
+holding out the remaining $n=48$ samples as the AFS input to \cxtkit. 
+
+
+We choose 25 focal pairs 
+because this sample size allows all chromosome-wide comparisons to fit in a single batch on an A100 GPU,
+enabling rapid whole-chromosome inference. 
+The top panels of Figure~5 
+show chromosome-wide TMRCA landscapes for chromosomes~2 and~6. 
+As an additional validation, 
+we compared inferred TMRCAs against the number of recombination events predicted by \cxtkit (SI Appendix, Fig.~S15),
+recovering the expected inverse relationship between genealogical age and segment length.
+
+
+The bottom panels in Figure~5
+zoom in on two canonical regions: 
+the \emph{LCT} locus on chromosome~2 
+and the \emph{HLA} region on chromosome~6. 
+At \emph{LCT}, we recover markedly reduced coalescent times
+as expected under the well-characterized recent selective sweep at this locus. 
+\cxtkit captures this local trough cleanly.
+Around \emph{LCT}, estimated coalescent times slightly above 10~kya 
+are consistent with the origin of the sweeping haplotype, 
+and the variation across focal pairs highlights local heterogeneity.
+
+The \emph{HLA} region provides the complementary pattern: 
+exceptionally deep genealogical structure shaped by long-term balancing selection. 
+The extended peaks inferred by \cxtkit (bottom-right)
+match long-standing expectations for this locus 
+and support the conclusion that the model captures extreme TMRCA variation.
+Consistent with this, 
+we replicate the multi-peaked ancient structure reported by \cite{deng2025general},
+with several genes reaching TMRCAs on the order of tens of millions of years,
+one of the strongest known signatures of long-term balancing selection.
+
+
+To investigate selective dynamics at the \emph{Rdl} locus across multiple \emph{A. gambiae} populations,
+we constructed a comparison panel (SI Appendix, Fig.~S14) showing coalescent-time landscapes
+from \cxtkit, \texttt{Singer+Polegon}, and \smcpp.
+The challenges outlined above are particularly acute here;
+high $N_e$-scaled rates substantially slow MCMC-based approaches such as \texttt{Singer+Polegon}.
+For readability, we show only \cxtkit results in the main text (Figure~6; see also SI Appendix, Fig.~S13);
+full method comparisons appear in SI Appendix, Fig.~S14.
+
+To address these issues,
+we fine-tuned \cxtkit on a filtered \texttt{stdpopsim} training set restricted to $N_e > 10^5$,
+reduced the window size ten-fold to 200\,bp,
+and performed inference in 100\,kb blocks.
+We additionally incorporated Ag1000G missing-data masks during fine-tuning
+to improve robustness to region-specific missingness.
+
+Finally, because the Ghana population does not meet the 25-diploid sample size used elsewhere,
+we trained a small adapter model to handle reduced sample size,
+while jointly accounting for large $N_e$ and missing-data patterns.
+
+
+The \texttt{Singer+Polegon} method was also run on the same samples.
+We tried two approaches to using \texttt{Singer+Polegon}:
+one with the ``natural'' parameterization of mutation and recombination rates,
+which for  \textit{Anopheles} yields a ratio of recombination:mutation $>>1$,
+and a second where we held this ratio fixed at $1$ (equivalent to the human
+parameterization).
+The former, ``natural'' parameterization yielded poor fits to observed diversity,
+particularly the marginal site frequency spectrum, thus the results presented here
+do not use mutation and recombination rates that reflect what is known about the \textit{Anopheles} genome,
+although the resulting fits are superior with respect to matching observed diversity patterns.
+
+
+Both \cxtkit and \texttt{Singer+Polegon} 
+successfully recover the pronounced reduction in TMRCA at \emph{Rdl}.
+Importantly, the depth of this trough is not uniform across populations:
+some populations, such as Ghana, show a sharper, more localized depression,
+whereas Uganda shows no depression in TMRCA at all. 
+This pattern parallels published differences in the frequency of \emph{Rdl}
+insecticide-resistance alleles among these populations
+\cite{grau2020evolution},
+supporting the interpretation that the inferred coalescent-time signal reflects
+geographically heterogeneous selection.
+
+In comparing their outputs, a key difference is in the behavior in regions 
+with missing data. \texttt{Singer+Polegon} consistently infers strong dips
+in the TMRCA in regions with missing data (see SI Appendix, Fig.~S14),
+presumably as a result of miscalibrated expectations of mutation rate in those regions. 
+However, because \cxtkit is explicitly trained to deal with missing data, no such
+artifacts are inferred. 
+
+
+\smcpp also detects a noticeable reduction in TMRCA around the \emph{Rdl} sweep,
+but its blockwise representation limits localization.
+Even after scaling the output to match the true genomic span and calibrating
+genome-wide diversity to the \cxtkit and Singer+Polegon panels,
+the inferred trough remains discretized and slightly shifted.
+This is expected: \smcpp fits a global demographic process using coarse blocks,
+so narrow sweeps can be detected but their genomic breakpoints are less precisely resolved.
+
+
+\paragraph{Inversion interior coalescence signal and dating context}
+To characterize how the \emph{In(2L)a} inversion shapes genealogical age across chr2L, 
+we summarize mean TMRCA in 
+(i) an outside background region (10--20~Mb), 
+(ii) the full inversion core interval, 
+and (iii) two 0.5~Mb windows sampled \emph{inside} the inversion, 
+offset by 1~Mb from each breakpoint to avoid the immediate transition zone where mapping artifacts,
+missingness, 
+and recombination suppression can confound interpretation.
+Averaged across populations, coalescent times are elevated inside the inversion relative to the outside background:
+outside (10--20~Mb) $= 8.264\times 10^{5} \pm 2.875\times 10^{4}$ generations,
+core interval $= 1.189\times 10^{6} \pm 1.674\times 10^{4}$,
+inner proximal (+1.0~Mb) $= 1.336\times 10^{6} \pm 7.116\times 10^{3}$,
+and inner distal ($-1.0$~Mb) $= 1.243\times 10^{6} \pm 8.939\times 10^{3}$ (mean $\pm$ s.d.\ across populations).
+This ordering (outside $<$ core $<$ inversion interior) is consistent with long-lived haplotype structure maintained within the inversion, as expected under reduced effective recombination between arrangements and/or long-term maintenance of both karyotypes.
+In practice, focusing on the inversion \emph{interior} provides a conservative summary that reflects the inversion's long-term genealogical signal while reducing sensitivity to breakpoint-adjacent artifacts.
+
+\section*{Discussion}
+
+In this study, we cast population-genetic inference as a language-modeling problem
+by training a modified GPT-2 model to learn the sequential structure of the coalescent with recombination
+as a conditional stochastic process. 
+In spirit, the method is aligned with SMC-based approaches such as \smcpp,
+but it replaces the explicit HMM likelihood, and its enforced first-order dependence, with attention-based sequence modeling.
+Modeling assumptions and priors are supplied implicitly through simulation during training, rather than specified analytically at inference time.
+
+The core of \cxtkit is an autoregressive conditional generator:
+given observed mutations in a window, the model samples a discrete distribution over pairwise coalescence times 
+and then extends predictions along the chromosome by conditioning on its own previously generated states.
+Repeating this procedure yields an approximate posterior over TMRCA trajectories
+that can be sampled efficiently in parallel.
+This approach differs fundamentally from prior deep learning methods such as \texttt{ReLERNN} \cite{adrion2020predicting} or \texttt{CoalNN} \cite{nait_saada_inference_2023}, which treat inference along the chromosome as a supervised regression task, and produce a single point estimate from sequence data.
+In contrast, \cxtkit uses a language model to learn the underlying conditional stochastic process.
+
+In this work, \cxtkit produces genome-wide TMRCA estimates for a diploid individual in minutes on a single GPU,
+and it can alternatively focus on a specific region and decode many pairs locally.
+Comparisons to \smcpp and \texttt{Singer+Polegon} show that \cxtkit
+consistently outperforms \smcpp in terms of accuracy of TMRCA inference (SI Appendix, Table~S6), and performs competitively with the state-of-the-art
+ARG-based method \texttt{Singer+Polegon}, matching it in well-specified settings,
+though with higher error in some out-of-distribution scenarios.
+\texttt{Singer+Polegon} remains the more accurate choice when computational cost is not a constraint,
+but achieving competitive performance without explicit ARG modeling highlights the efficiency of the language-model approach.
+These computational and statistical properties motivate application to empirical datasets spanning both canonical and challenging inference regimes.
+
+To assess the performance of \cxtkit on empirical data, 
+we applied it to two empirical systems with very different mutation-to-recombination regimes:
+(i) a targeted validation in humans of the \emph{HLA} and \emph{LCT} regions of the genome, known coalescent time outliers,
+and (ii) a chromosome-scale scan of chr2L in Anopheles, 
+highlighting the extensibility of our model to settings with huge population sizes
+and pervasive missing data that challenge standard statistical estimation.
+
+In humans,
+the \emph{LCT} locus provides a canonical example of recent, strong, and geographically structured selection.
+Lactase persistence is driven primarily by regulatory variation upstream of \emph{LCT},
+including variants located in intronic sequence of the neighboring \emph{MCM6} gene
+that modulate enhancer/promoter activity \cite{swallow2003genetics,tishkoff2007convergent}.
+Population-genetic analyses indicate that derived lactase-persistence haplotypes rose rapidly in frequency
+over roughly the past 5{,}000--10{,}000 years,
+consistent with gene--culture coevolution in the context of dairying \cite{bersaglieri2004genetic, itan2009origins}.
+Our pairwise TMRCA estimates at \emph{LCT} reflect this known history cleanly,
+recovering a pronounced local dip in coalescence times centered on the locus.
+In our sample,
+some pairs exhibit a TMRCA younger than 10\,000 years,
+substantially younger than the average across the region, 
+but simultaneously we note that there is extensive
+variation across pairs that likely reflects that LCT arose from standing variation \cite{peter2012distinguishing},
+and thus the locus harbors significant stochasticity in the underlying genealogies. 
+
+In the \emph{HLA} region,
+we observe exceptionally ancient separation times among alleles.
+For several genes,
+pairwise TMRCAs exceed commonly cited human--chimpanzee divergence times,
+consistent with trans-species polymorphism under long-term balancing selection.
+The \emph{HLA} locus is among the most polymorphic regions of the human genome,
+likely driven to extreme variation by arms-race dynamics at the immune genes it encodes.
+Accordingly,
+there is abundant evidence that some \emph{HLA} alleles have been maintained for tens of millions of years
+by balancing selection \cite{hedrick1998balancing,azevedo2015trans,fortier2025ancient}.
+In our sample of British individuals,
+the \emph{HLA} region is a clear outlier in the chromosome-wide distribution of coalescence times
+(Figure~5, top right).
+Across multiple genes,
+we observe pairwise TMRCAs exceeding 10 million years.
+While surprisingly ancient,
+these estimates are nonetheless in agreement with recent population-genetic dating in \cite{deng2025general}.
+Together, \emph{LCT} and \emph{HLA} provide complementary extremes, 
+recent directional selection versus long-term balancing selection, 
+allowing us to validate \cxtkit across nearly the full dynamic range of human genealogical timescales,
+from thousands to tens of millions of years.
+
+Unlike the human analyses, which primarily serve as validation against well-characterized loci, 
+the Ag1000G application reveals previously unresolved spatial and temporal structure within ancient inversions and insecticide-resistance sweeps.
+These mosquito data also present a substantially more challenging setting for coalescent inference.
+In particular,
+the Ag1000G data combine very large effective population sizes,
+pervasive and spatially heterogeneous missingness,
+and uneven sample sizes across populations.
+Together,
+these factors challenge both diversity-based summaries and likelihood-based decoding,
+and provide a stringent test of whether \cxtkit can be adapted to real data 
+with non-ideal sampling and observation patterns.
+
+We highlight chromosome 2L which carries a number of known targets
+of insecticide resistance as well as a well studied inversion, \emph{In(2L)a}. 
+Considering first the chromosomal landscape of estimates (SI Appendix, Fig.~S13,
+bottom panels), we observe that the \emph{In(2L)a} inversion region displays generally deeper coalescent times
+than the surrounding genomic background, with particular peaks in age near its breakpoints;
+consistent with prior observations of elevated diversity within this inversion \cite{love2016chromosomal}. 
+Previous age estimates of the inversion using phylogenomics have aged the origin of the
+inversion to more than two million years ago \cite{fontaine2015extensive},
+before the origin of the \emph{An. gambiae} complex of species.
+We find that the regions proximal to the inversion breakpoints show ages on the order of $\sim$ 1.1 million generations, consistent with this deep origin.
+This pattern likely reflects a combination of suppressed recombination between inverted and standard arrangements, 
+as well as long-term balancing selection maintaining both arrangements in the population.
+While the deep origin of \emph{In(2L)a} is well established, how such an ancient inversion has been maintained within populations, and whether its evolutionary history is uniform across its length, remains less well understood. The pronounced and spatially structured coalescent age peaks near the inversion breakpoints indicate that different regions of the inversion have experienced markedly different genealogical histories since its origin. 
+This suggests that recombination suppression and long-term maintenance have acted heterogeneously across the inversion.
+More broadly, it demonstrates that population-scale genealogical inference can reveal biologically meaningful structure in the evolutionary dynamics of ancient chromosomal inversions beyond a single global age estimate.
+
+
+Along chromosome 2L, a significant outlier is the well-studied \emph{Rdl} locus,
+which confers resistance to dieldrin and other cyclodiene insecticides \cite{ffrench1993point,thompson1993conservation,du2005independent}.
+Resistance to dieldrin appeared in Nigerian populations only ${\sim}$18 months 
+after the initial onset of insecticide control efforts in 1954 \cite{elliott1956insecticide}
+as a single, dominant allele \cite{davidson1962case}.
+Population genetic evidence points to a strong selective sweep at \emph{Rdl}
+as well as a complex history of introgression that extends between species and inversion karyotypes \cite{grau2020evolution}.
+Our coalescent time estimates fill in this picture; 
+we find clear evidence of recent selection at the locus, with 
+short coalescent times among individuals in populations,
+such as Ghana, in which the resistant \emph{Rdl} is at high frequency.
+Conversely in east African samples, where resistance is not found, 
+coalescent times at the locus are indistinguishable from the local background.
+
+Generally, our youngest time estimates at \emph{Rdl} are on the order of hundreds to thousands of years, 
+which would predate the introduction of broad insecticide use. 
+Two things could be pushing back our dates here: i) it could
+be that the mutation was segregating at low frequency before the onset of
+selection, and ii) our estimates average over sites, and are not dating 
+the origin of the \emph{A296G} nonsynonymous mutation that confers 
+resistance in \emph{An. gambiae}.
+
+Taken together, these applications show that \cxtkit remains effective on large empirical datasets, 
+including local genomic regions that deviate substantially from the evolutionary scenarios represented in its simulation-based pretraining, which acts as an implicit prior, 
+such as targets of selective sweeps and long-term balancing selection.
+The Ag1000G analyses, in particular, highlight a practical advantage of simulation-based models: the ability to adapt to new evolutionary regimes with minimal targeted modification.
+By fine-tuning on high--$N_e$ simulations, reducing the window size to 200\,bp, incorporating empirical missing-data masks, and adding a lightweight adapter for small sample sizes, \cxtkit remained accurate in settings where traditional ARG MCMC and SMC-based methods face computational or modeling limitations.
+This flexibility, combined with amortized inference, positions \cxtkit as a practical and scalable tool for population-genomics studies as community resources such as \stdpopsim continue to expand to encompass additional species, demographic histories, and recombination landscapes.
+
+
+In summary, we introduce a language-model-based inference engine designed to scale with the growing \stdpopsim catalog.
+By directly learning a conditional stochastic process, \cxtkit absorbs prior knowledge directly through simulation-based training, without requiring new analytic likelihood derivations for each scenario.
+As a result, \cxtkit is a fast and accurate tool for TMRCA inference, and provides a flexible framework that can be adapted to novel evolutionary settings.
+
+
+\matmethods{
+
+\subsection*{Next-coalescence Prediction}
+We introduce as our prediction task, \textit{next-coalescence} prediction, which
+we define to mean the next point in time in which a focal (or pivot) pair
+of sequences find common ancestry as we move across (say from left to right)
+a sequence. 
+Our method processes 500 genome windows (most commonly e.g. 500 $\times$ 2 Kb or 1Mb; or 500 $\times$ 200 bp or 0.1 Mb) of sequence.
+For the purposes of this paper we use a sample size of 25 diploid individuals, but this is arbitrary and we provide a method to train a light-weight adapter generalizing to required input sizes (or recommend sub-sampling and averaging for larger sample sizes).
+Our model focuses on a pivot pair of chromosomes, also non-as distinguished pairs in \smcpp terminology, from which we predict pairwise coalescence events, or more specifically a probability distribution from which the next coalescence event can be sampled for that pivot pair along the sequence for each of the 500 windows. This describes an iterative process by which the predicted coalescence time is concatenated with the mutational context, forming the next input to the model to predict the next coalescence event (see Figure 1). We refer to this procedure as \textit{next-coalescence prediction}. 
+We continue by describing the processing of the genotype matrix as obtained from 
+coalescent simulation before presenting the architecture and listing the specific 
+simulation parameterization next.
+
+\subsection*{Processing of Coalescent Simulations}
+
+We begin with a genotype matrix $G \in \mathbb{Z}^{2N \times M}$ 
+containing $2N$ haploid sequences (from $N$ diploid individuals) across $M$ sites, 
+obtained from coalescent simulations (here \texttt{msprime}) or empirical data. 
+All empirical analyses in this work use within-individual pivot pairs 
+(the two haplotypes of one diploid, analogous to the PSMC setting), 
+for which phasing is not required:
+heterozygous and homozygous sites are determined by the genotype alone, 
+so the XOR/XNOR features and SFS weights that constitute the model input 
+are identical whether or not phase is known.
+Cross-individual pivot pairs, used here only in simulated benchmarks 
+where phase is known by construction, 
+would require phased haplotypes; 
+in that setting, standard statistical phasing tools 
+can be applied as a routine upstream step.
+
+A high-level description is provided here, 
+with an explicit version in SI Appendix, Algorithm~1 
+and a schematic overview in SI Appendix, Fig.~S1. 
+The core preprocessing consists of extracting mutation patterns for each pivot pair
+using logical operations—-heterogeneous differences via \texttt{XOR} 
+and homogeneous matches via \texttt{XNOR}—-and then weights these pivot-pair vectors
+by their site-frequency spectrum (SFS) counts computed across all remaining samples. 
+This converts the otherwise binary mutation indicators from the logical operations
+into coarse age-informed signals, 
+ensuring that the inferred pairwise coalescence times are driven 
+by the allele frequency spectrum present in the entire sample.
+
+This procedure is applied in sliding windows of increasing size (4–128 K\,b)
+with a 2 K\,b stride, which allows for rescaling when
+inference is performed at different resolutions. 
+
+In summary, the model input consists solely of the genotype matrix and variant positions; 
+from these, we derive windowed, SFS-weighted mutation patterns for each pivot pair, 
+which the language model uses to estimate average coalescence times per window. 
+These inputs arise naturally from \texttt{msprime} simulations or from empirical genotype data such as VCFs.
+
+
+\subsection*{Implementation of the Decoder-Only Architecture}
+
+We implement a decoder-only transformer closely aligned with GPT-2 \cite{radford_language_2019}, 
+rather than the original encoder–decoder formulation \cite{vaswani_attention_2017}, 
+and adapt it to the structure of population genetic data. 
+In NLP, text is tokenized and mapped to embeddings via a learned lookup table; 
+in contrast, the mutation patterns in genomic windows form a vast,
+effectively continuous space that makes discretization impractical. 
+Instead of defining a bespoke tokenizer,
+we directly project SFS-weighted mutation patterns into the latent space using a fully connected embedding module (SI Appendix, Algorithm~2),
+which accepts tensors of shape $B \times Z \times WS \times K \times N$ and outputs $B \times K \times E$. 
+Here, $B$ is batch size, $Z$ the logical vector distinguishing heterozygous and homozygous states, $WS$ the number of window sizes, $K$ the number of windows, $N$ the number of samples, and $E$ the embedding dimension.
+
+Coalescence times are represented by partitioning log-scaled values into 324 discrete intervals (SI Appendix, Table~S1), each mapped through a small embedding table. 
+The model then concatenates mutation and coalescence embeddings
+so that every context window carries both the local mutational signal and the discretized temporal state. 
+This setup allows the same model to perform inference across diverse evolutionary scenarios without re-training, 
+since the inputs already encode the relevant population-genetic context.
+
+To encode genomic position, we adopt rotary positional embeddings \cite{su_roformer_2023},
+which efficiently capture spatial structure and require no adjustment under fixed-stride windows (e.g., 2 kb).
+The resulting sequence fed to the transformer consists of 500 mutation embeddings, a start token, 
+and the coalescence embeddings, yielding a fixed latent length of 1001; padding exists but is unused. 
+A dropout rate of \textbf{0.1} is applied for regularization. 
+Both narrow (single-scenario) and broad (multi-scenario) models (\cxtkit-narrow and \cxtkit-broad respectively) share this architecture, 
+with parameterization summarized in SI Appendix, Table~S1. 
+Further implementation details are available at \url{https://github.com/kr-colab/cxt}.
+
+\subsection*{Sample-size and accessibility adaptation}
+\label{sec:adapter}
+
+\cxtkit models are trained at a fixed sample size, which determines the number of
+SFS channels used to represent the mutational context.
+Empirical datasets may contain fewer samples than the pretrained model
+(e.g.\ the Ghana population in Ag1000G), and retraining the full model for each
+sample size would be inefficient.
+To enable transfer to smaller cohorts, we introduce a lightweight input-adaptation stage that operates
+before the pretrained decoder-only transformer.
+
+\paragraph{Sample-size adapter}
+The adapter maps SFS features computed from a reduced cohort to the dimensionality
+expected by the pretrained model.
+After this transformation, data are processed by the original projection layers
+and transformer without further modification.
+In this way, the adapter modifies only how mutational information is presented to
+the model, while preserving the pretrained representation of the coalescent process.
+
+The adapter is implemented as a small residual neural network applied independently
+to each genomic window.
+It consists of layer normalization followed by a gated bottleneck that rescales and
+recombines SFS channels derived from the smaller cohort.
+A residual connection projects the input directly to the target dimensionality, and
+a learnable scaling parameter initialized near zero controls the magnitude of the
+adapter's contribution.
+As a result, the adapter behaves close to an identity mapping at the start of
+training and fine-tunes in a stable manner.
+
+\paragraph{Training procedure}
+Adapter training is performed by freezing all parameters of the pretrained
+decoder-only transformer and updating only the adapter parameters.
+The training objective is identical to that of the full model, namely prediction of
+the local pairwise coalescence time in each genomic window.
+Because the adapter contains far fewer parameters than the backbone, it converges
+rapidly and can be trained in a small number of epochs using simulations generated
+at the target sample size.
+
+To accommodate small but systematic shifts in input statistics, we additionally
+unfreeze the LayerNorm parameters and the final transformer blocks and train them at
+a substantially reduced learning rate.
+This restricted fine-tuning improves stability when transferring to smaller cohorts
+while avoiding degradation of the pretrained coalescent prior.
+
+\paragraph{Fine-tuning to genomic inaccessibility}
+Empirical genomes contain extended regions that are systematically uncallable,
+producing structured missingness patterns that differ from idealized simulations.
+To account for this, we fine-tune the adapted model on training examples in which
+genomic inaccessibility is imposed explicitly using an empirical accessibility mask.
+
+For each simulated tree sequence, we select a contiguous genomic segment and delete
+intervals corresponding to inaccessible sites from the tree sequence, ensuring that
+both mutational and genealogical information reflect the empirical observation
+process.
+In parallel, we compute the fraction of inaccessible bases per window across multiple
+scales and inject this signal into a dedicated input channel, providing the model
+with explicit information about local callability.
+This fine-tuning step uses the same training objective as above and updates the same
+restricted set of parameters (adapter, LayerNorms, and final transformer blocks),
+allowing the model to retain its pretrained coalescent representation while
+calibrating to irregular observation patterns in real genomes.
+
+
+\subsection*{Calibration of the Molecular Clock}
+\label{correction}
+
+Although \cxtkit is mutation-rate agnostic during training, 
+its raw TMRCA predictions must be placed on an absolute timescale for demographic interpretation.
+We therefore apply a simple calibration step that rescales predicted TMRCAs 
+so that the expected nucleotide diversity matches 
+the observed diversity across the full context window. 
+This correction is typically negligible when the data resemble the training scenarios, 
+but becomes useful under atypical mutation rates or demographic histories. 
+To avoid collapsing variability across replicates, 
+we treat the correction factor probabilistically rather than deterministically. 
+A full derivation, including the Poisson–Gamma model used to sample per-replicate correction factors, 
+is provided in SI Appendix, Figs.~S2 and S3.
+
+\subsection*{Estimating Population Size from Coalescence Rates}
+
+To convert predicted TMRCAs into population size trajectories, 
+we estimate the instantaneous coalescence rate on a logarithmic time grid 
+and invert it to obtain $N_e(t) = 1 / (2\lambda(t))$. 
+This provides a nonparametric demographic reconstruction directly from the model's TMRCA samples. 
+Details, including windowing, discretization, and treatment of the tail interval, 
+appear in SI Appendix.
+
+
+\subsection*{Datasets and Training Description}
+\label{datasets}
+
+Full details of the training/validation parameter sets (narrow vs.\ broad; \stdpopsim v0.2 for training and v0.3 reserved for validation), along with exact commands, are provided in SI Appendix and in the online manual. 
+Models were implemented in PyTorch Lightning and trained with AdamW (base learning rate $3\times10^{-4}$) with cosine annealing; datasets were stored in float16 for efficiency. 
+Fine-tuned variants were trained for two epochs with a ten-fold reduced learning rate. 
+Inputs follow a fixed-length mutation context paired with coalescence tokens, trained with a causal NLL objective. 
+We use a translation-aware fused-causal mask so coalescence predictions attend to all prior mutations and past coalescences, while mutation predictions attend to all prior tokens.
+
+
+\subsection*{Environmental Considerations}
+Although GPUs typically draw more instantaneous power than CPUs 
+(e.g., ~250–400 W for an NVIDIA A100 versus ~225 W for a high-end server CPU such as the AMD EPYC 7742),
+they can substantially reduce wall-clock time for inference workloads 
+(distinct from training, which requires on the order of 10 h on three A100s) 
+that map well to highly parallel operations. 
+This is particularly relevant for our amortized inference setting, 
+where recombination-rate variation does not affect runtime, 
+unlike in full-likelihood methods such as Singer. 
+In practice, GPU acceleration can markedly shorten runtime in certain parameter regimes, especially large Ne-scaled scenarios, so that even with a higher power draw, 
+the total energy use and $CO_{2}$ emissions per completed inference may be lower than on CPUs,
+simply because the task finishes much faster.
+
+}
+
+\showmatmethods{}
+
+\dataavail{Simulation code, model training workflows, and accompanying documentation are available under a CC-BY-NC 4.0 license at \url{https://github.com/kr-colab/cxt}, with additional resources at \url{https://cxt.readthedocs.io/en/latest/}. Publicly available data from the 1000 Genomes Project were used for evaluation.}
+
+\acknow{We thank Scott Small for his assistance with processing the Anopheles data and members of the Kern-Ralph co-lab for helpful discussions and feedback. We thank the two anonymous reviewers who provided constructive feedback on our manuscript.  We also thank the authors of \smcpp{} and \singer{} for their implementations and for providing their code. Finally, we thank Negar Rahnamae for designing the logo for the \cxtkit{} method. This work was supported by NIH awards R35148253 and R01HG010774.}
+
+\showacknow{}
+
+
+\bibliography{cxt}
+
+\newpage
+\section*{Figure Legends}
+
+\textbf{Figure 1.}
+$\cxtkit$ introduces the notation of \textit{next-coalescence prediction}
+(Left). \cxtkit{} is a language model that conditions on a chosen ``pivot'' haplotype pair and
+predicts the pair's time to the most recent common ancestor (TMRCA) for each window.
+\cxtkit ingests mutational tensors constructed using the pivot pair and site--frequency--spectrum (SFS) values
+computed in windows across a focal region.
+The model works autoregressively: after each window is predicted,
+that estimate is appended to the context and supplied to the next step,
+yielding a step-wise reconstruction of the entire pairwise coalescent history.
+Because every haplotype pair can be processed in parallel, the approach scales efficiently with available GPU memory.
+In the right panel all $\binom{50}{2}$ pairwise coalescence curves for a sample of 50 haplotypes were inferred simultaneously in under five minutes on a single NVIDIA~A100 GPU.
+True TMRCAs are plotted in black, individual replicate predictions in light blue, and the prediction mean in dark blue.
+
+\textbf{Figure 2.}
+True versus predicted coalescence times for three inference approaches across two demographic
+scenarios: a constant population size and a fluctuating ``sawtooth'' demography.
+Top row: \texttt{cxt-narrow} evaluated on the constant-size scenario (left) and on the sawtooth scenario (middle), followed by \texttt{cxt-broad} evaluated on the sawtooth scenario (right). The broad model\textemdash trained on a wider range of demographic histories\textemdash achieves substantially improved accuracy.
+Bottom row: \texttt{Singer+Polegon} evaluated on the constant-size (left) and sawtooth (middle) scenarios. The two rightmost panels show \smcpp{} applied to the constant-size and sawtooth scenarios, respectively. Although \smcpp{} is primarily designed for population-size inference, we include its decoding-based coalescence-time estimates for completeness. Mean squared errors (MSE) for each panel are reported within the plots.
+
+\textbf{Figure 3.}
+Out-of-sample evaluation of the broad model on \stdpopsim v0.3. Each panel shows inferred marginal coalescence distributions (dashed) against true distributions (shaded).
+We simulated data from the novel species / demographic histories added in \stdpopsim v0.3, aggregating pairwise inferences into kernel density plots.
+All results are from simulations previously unseen during training (Top Rows: \cxtkit; Middle Rows: \texttt{Singer+Polegon}; Bottom Rows: \smcpp).
+
+\textbf{Figure 4.}
+Inverse-instantaneous coalescence rate calculation for the piecewise-constant demography of
+\textit{H. sapiens} (left), \textit{A. thaliana} (middle) and \textit{B. taurus} (right).
+The inference of pairwise-coalescence events leads to the implicit inference of demography estimates
+through the marginal coalescence distribution assuming coalescence occurs as a Poisson process (see methods).
+For each scenario 10 Mb and 25 diploid samples have been used to achieve resolution throughout the specified time-windows.
+
+\textbf{Figure 5.}
+Inference of coalescent times from 25 focal pairs of British individuals of the 1000 Genomes project. The top panel shows chromosome-wide TMRCA landscapes for chromosomes~2 (left) and~6 (right). The bottom panel zooms into the LCT region on chromosome~2 (left) and the HLA region on chromosome~6 (right). Each pivot pair has been inferred 15 times to get a reliable mean, median and variance estimates. Additionally, light blue lines show the respective inferences of the 25 pairs.
+
+\textbf{Figure 6.}
+Coalescent-time structure across the \emph{In(2L)a} inversion on chr2L.
+Top: mean TMRCA summaries for an outside background region (10--20~Mb), the full inversion core interval, and two interior 0.5~Mb windows positioned 1~Mb inside each breakpoint (mean $\pm$ s.e.m.\ across replicate trajectories; ``All'' aggregates populations).
+Bottom: genome-wide mean TMRCA curves shown per population and pooled (``All''), with vertical guides marking inversion boundaries, breakpoint-adjacent windows, and the interior sampling windows used for summary statistics.
+
+\end{document}

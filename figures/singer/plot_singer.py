@@ -110,40 +110,56 @@ def set_loge_power10_ticks(ax, xmin, xmax):
 # -----------------------------------------------------------------------
 
 def plot_fig2_singer(output_dir, cache_dir):
-    """Singer scatter plots for constant and sawtooth demographies."""
+    """Singer scatter plots for constant and sawtooth demographies.
+
+    Each scenario pkl contains 3 tree sequences (different seeds);
+    Polegon MCMC outputs exist for each seed.  We aggregate across
+    all seeds so that the MSE reflects the average over replicates.
+    """
     polegon_dir = os.path.join(SINGER_BASE, "generic-models/polegon-output")
     sim_dir = os.path.join(SINGER_BASE, "generic-models/simulations")
     pairs = [(i, j) for i in range(50) for j in range(i + 1, 50)]
 
-    for scenario, file_stem in [("constant", "constant_2824078380"),
-                                ("sawtooth", "sawtooth_2824078380")]:
+    SEEDS = [2824078380, 1342068332, 4119509401]
+
+    for scenario in ["constant", "sawtooth"]:
         cache_path = os.path.join(cache_dir, f"singer_{scenario}.npz")
         ts_path = os.path.join(sim_dir, f"tss_{scenario}.pkl")
 
         with open(ts_path, "rb") as f:
             tss = pickle.load(f)
-        ts = tss[0] if isinstance(tss, list) else tss
+        if not isinstance(tss, list):
+            tss = [tss]
 
         if os.path.exists(cache_path):
             d = np.load(cache_path)
             yhats, ytrues = d["yhats"], d["ytrues"]
         else:
-            yhats_mcmc = []
-            for rep in MCMC_REPS:
-                fp = os.path.join(polegon_dir, f"{file_stem}.{rep}.polegon.trees")
-                ts_singer = load_polegon_trees(fp)
-                rep_tmrcas = []
-                for a, b in pairs:
-                    rep_tmrcas.append(interpolate_tmrcas(ts_singer, BIN_BP, SEQ_LEN, a, b))
-                yhats_mcmc.append(rep_tmrcas)
-                print(f"  Loaded {os.path.basename(fp)}")
-            yhats = np.array(yhats_mcmc)
+            all_yhats, all_ytrues = [], []
+            for seed_idx, seed in enumerate(SEEDS):
+                file_stem = f"{scenario}_{seed}"
+                ts = tss[seed_idx]
 
-            with ProcessPoolExecutor(max_workers=24) as ex:
-                ytrues = np.array(list(ex.map(
-                    _interp_worker, [(ts, a, b) for a, b in pairs]
-                )))
+                yhats_mcmc = []
+                for rep in MCMC_REPS:
+                    fp = os.path.join(polegon_dir, f"{file_stem}.{rep}.polegon.trees")
+                    ts_singer = load_polegon_trees(fp)
+                    rep_tmrcas = []
+                    for a, b in pairs:
+                        rep_tmrcas.append(interpolate_tmrcas(ts_singer, BIN_BP, SEQ_LEN, a, b))
+                    yhats_mcmc.append(rep_tmrcas)
+                    print(f"  Loaded {os.path.basename(fp)}")
 
+                with ProcessPoolExecutor(max_workers=24) as ex:
+                    seed_ytrues = np.array(list(ex.map(
+                        _interp_worker, [(ts, a, b) for a, b in pairs]
+                    )))
+
+                all_yhats.append(np.array(yhats_mcmc))
+                all_ytrues.append(seed_ytrues)
+
+            yhats = np.concatenate(all_yhats, axis=1)
+            ytrues = np.concatenate(all_ytrues, axis=0)
             np.savez_compressed(cache_path, yhats=yhats, ytrues=ytrues)
 
         yhat_mean = np.array(yhats).mean(0) if yhats.ndim == 3 else yhats

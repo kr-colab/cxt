@@ -233,7 +233,7 @@ def main():
 
     model = cxt.load_model("broad", device="cpu")
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=True)
 
     for ax, cfg in zip(axes, SPECIES_CONFIGS):
         res = run_species(cfg, model, args)
@@ -244,7 +244,7 @@ def main():
         ax.step(tw[:-1], res["ytrue_coalrate"], where="post",
                 color="firebrick", label="Inference limit")
         ax.step(tw[:-1], res["yhat_coalrate"], where="post",
-                color="dodgerblue", label="cxt")
+                color="cornflowerblue", label="cxt")
 
         # Singer+Polegon
         try:
@@ -252,7 +252,7 @@ def main():
                 cfg["key"], args.singer_cache_dir,
             )
             singer_cr = coalescence_rates(singer_flat, tw)
-            ax.step(tw[:-1], singer_cr, where="post", color="darkblue",
+            ax.step(tw[:-1], singer_cr, where="post", color="navy",
                     label="Singer+Polegon", linestyle="--")
         except Exception as e:
             print(f"  Singer skipped for {cfg['key']}: {e}")
@@ -265,23 +265,27 @@ def main():
             )
             smcpp_cr = smcpp_coalrate_from_model(model_json, res["fine_time_grid"])
             ax.plot(res["fine_time_grid"], smcpp_cr, "-",
-                    color="cyan", alpha=0.9, label="SMC++")
+                    color="teal", label="SMC++")
         except Exception as e:
             print(f"  SMC++ skipped for {cfg['key']}: {e}")
 
         ax.set_xscale("log")
         ax.set_yscale("log")
+        ax.set_ylim(1e-6, 1e-3)
         ax.set_xlabel("Time (Generations)")
         desc = res["description"].split("(")[0].rstrip()
         ax.set_title(f"{res['title']}\n{desc}", loc="left")
         ax.grid(True)
 
     axes[0].set_ylabel("IICR / 2")
-    axes[-1].legend(loc="lower right", fontsize=8)
+    axes[-1].legend(loc="upper right", fontsize=8)
     plt.tight_layout()
 
+    out_pdf = os.path.join(args.output_dir, "figure5_demography.pdf")
+    fig.savefig(out_pdf, bbox_inches="tight")
     out = os.path.join(args.output_dir, "figure5_demography.png")
     fig.savefig(out, dpi=300, bbox_inches="tight")
+    print(f"Saved {out_pdf}")
     print(f"Saved {out}")
     plt.close(fig)
 

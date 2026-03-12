@@ -531,10 +531,16 @@ do_figures() {
             --output-dir "${FIG_OUT_MAIN}" --cache-dir "${FIG_CACHE_MAIN}/fig3" \
             ${dev_args}
 
+    local singer_dir="${FIG_CACHE_MAIN}/singer"
+    local smcpp_dir="${_ARCHIVE}/smcpp_comparison/fig4_smc++"
+    local fig4_extra=""
+    [ -d "${singer_dir}" ] && fig4_extra="${fig4_extra} --singer-cache-dir ${singer_dir}"
+    [ -d "${smcpp_dir}" ]  && fig4_extra="${fig4_extra} --smcpp-cache-dir ${smcpp_dir}"
+
     run_step "Fig 4: stdpopsim v3 OOD" \
         python -m figures.main.fig4_stdpopsim_v3_ood \
             --output-dir "${FIG_OUT_MAIN}" --cache-dir "${FIG_CACHE_MAIN}/fig4" \
-            ${dev_args}
+            ${dev_args} ${fig4_extra}
 
     run_step "Fig 5: Demography inference" \
         python -m figures.main.fig5_demography_inference \
@@ -574,7 +580,8 @@ do_figures() {
 
     run_step "Fig S9: Mosquito comparison" \
         python -m figures.supplementary.figS9_mosquito_comparison \
-            --output-dir "${FIG_OUT_SUPP}" --cache-dir "${FIG_CACHE_SUPP}/figS9"
+            --output-dir "${FIG_OUT_SUPP}" \
+            --fig7-cache-dir "${FIG_CACHE_MAIN}/fig7"
 
     run_step "Fig S10: Cross coalescence" \
         python -m figures.supplementary.figS10_cross_coalescence \
@@ -585,6 +592,106 @@ do_figures() {
         python -m figures.supplementary.figS11_interpolation_grid \
             --output-dir "${FIG_OUT_SUPP}" --cache-dir "${FIG_CACHE_SUPP}/figS11" \
             ${dev_args}
+
+    # ---- SMC++ mosquito caches (theoretical; uses archive by default) ----
+    # The mosquito comparison figure (figS9) loads Singer and SMC++ data from
+    # REVISION_MOSQUITO_CACHE in the archive.  If the archive caches are missing
+    # and you have Singularity/Apptainer + the Ag1000G tree sequences, you can
+    # regenerate them by uncommenting the block below.
+    #
+    # if [ ! -f "${_ARCHIVE}/revision_mosquito_cache/smcpp_burkina_faso.npz" ]; then
+    #     log "SMC++ mosquito caches missing -- regeneration would go here"
+    #     # for pop in burkina_faso mali cameroon ghana uganda; do
+    #     #     python -c "
+    #     # from figures.utils import analyze_ts_with_smcpp_multi
+    #     # import tskit, numpy as np
+    #     # ts = tskit.load('${AG1000G_DATA_DIR}/${pop}_chr2L.trees')
+    #     # result = analyze_ts_with_smcpp_multi(ts, mu=..., sif_path=...)
+    #     # np.savez_compressed('${_ARCHIVE}/revision_mosquito_cache/smcpp_${pop}.npz',
+    #     #                     yhats=result['log_tmrca_grid'])
+    #     # "
+    #     # done
+    # fi
+
+    # ---- Bias figure from model-calibration experiments ----
+    local BIAS_CACHE="${_ARCHIVE}/experiments/bias-coalscale-mutrate"
+    if [ -f "${BIAS_CACHE}/cache.pkl" ]; then
+        run_step "Fig S16: Bias-mutcoal" \
+            python experiments/model-calibration/make_supp_figs.py
+        if [ -f "${BIAS_CACHE}/supp-fig-bias-mutcoal.png" ]; then
+            cp "${BIAS_CACHE}/supp-fig-bias-mutcoal.png" "${FIG_OUT_SUPP}/supp-fig-bias-mutcoal.png"
+            log "  Copied supp-fig-bias-mutcoal.png to ${FIG_OUT_SUPP}"
+        fi
+    else
+        log "  WARNING: bias-coalscale-mutrate cache not found, skipping Fig S16"
+    fi
+
+    # ---- Copy figures into cxt_paper/ and compile LaTeX ----
+    # Maps: paper filename (without ext) -> generated filename (without ext)
+    # The paper \includegraphics uses .pdf; scripts output .pdf or .png.
+    local PAPER_DIR="${REPO_ROOT}/cxt_paper"
+    local PAPER_FIG_DIR="${PAPER_DIR}/figures"
+    if [ -d "${PAPER_DIR}" ]; then
+        log "Copying generated figures into ${PAPER_FIG_DIR} ..."
+        mkdir -p "${PAPER_FIG_DIR}"
+
+        local -A fig_map=(
+            [figure1]=figure1
+            [figure4]=figure4_stdpopsim_v3
+            [figure5]=figure5_demography
+            [figure6]=figure6_human_1kg
+            [figure6_zoom]=figure6_human_1kg_zoom
+            [figure7]=figure7_mosquito_rdl
+            [figure8]=figure8_inversion
+        )
+        for paper_name in "${!fig_map[@]}"; do
+            local src_base="${FIG_OUT_MAIN}/${fig_map[$paper_name]}"
+            for ext in pdf png; do
+                if [ -f "${src_base}.${ext}" ]; then
+                    cp "${src_base}.${ext}" "${PAPER_FIG_DIR}/${paper_name}.${ext}"
+                    log "  ${paper_name}.${ext}"
+                fi
+            done
+        done
+
+        # ---- Copy supplementary figures ----
+        local SUPP_FIG_DIR="${PAPER_DIR}/cxt_supplementary/figures"
+        log "Copying supplementary figures into ${SUPP_FIG_DIR} ..."
+        mkdir -p "${SUPP_FIG_DIR}"
+
+        local -A supp_fig_map=(
+            [figS6_runtime_benchmark]=figS6_runtime_benchmark
+            [figS9_mosquito_comparison]=figS9_mosquito_comparison
+            [figS10_cross_coalescence]=figS10_cross_coalescence
+            [figS11_interpolation_grid]=figS11_interpolation_grid
+            [supp-fig-bias-mutcoal]=supp-fig-bias-mutcoal
+            [cxt_broad_adapter_constant]=cxt_broad_adapter_constant
+            [cxt_w2000]=cxt_w2000
+            [heatmap_examples]=heatmap_examples
+            [heatmap_examples_corrected]=heatmap_examples_corrected
+        )
+        for name in "${!supp_fig_map[@]}"; do
+            local src_base="${FIG_OUT_SUPP}/${supp_fig_map[$name]}"
+            for ext in pdf png; do
+                if [ -f "${src_base}.${ext}" ]; then
+                    cp "${src_base}.${ext}" "${SUPP_FIG_DIR}/${name}.${ext}"
+                    log "  ${name}.${ext}"
+                fi
+            done
+        done
+
+        # ---- Compile LaTeX ----
+        if command -v pdflatex &>/dev/null; then
+            run_step "Compile LaTeX paper" \
+                pdflatex -interaction=nonstopmode -output-directory="${PAPER_DIR}" \
+                    "${PAPER_DIR}/Research_report.tex"
+            run_step "Compile LaTeX supplementary" \
+                pdflatex -interaction=nonstopmode -output-directory="${PAPER_DIR}/cxt_supplementary" \
+                    "${PAPER_DIR}/cxt_supplementary/PNAS-template-main.tex"
+        else
+            log "  pdflatex not found, skipping paper compilation"
+        fi
+    fi
 
     STAGE_TIMES+=("Figures: $(( SECONDS - t0 ))s")
 }

@@ -1,0 +1,687 @@
+\documentclass[9pt,twoside]{pnas-new}
+\templatetype{pnassupportinginfo}
+
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{subcaption}
+
+\newcommand{\cxtkit}{\texttt{cxt}\xspace}
+\newcommand{\msprime}{\texttt{msprime}}
+\usepackage{xspace}
+\newcommand{\stdpopsim}{\texttt{stdpopsim}\xspace}
+\newcommand{\singer}{\texttt{Singer}}
+\newcommand{\smcpp}{\texttt{SMC++}}
+\newcommand{\logspace}{\text{log-space}}
+
+\title{Coalescence and Translation: A Language Model for Population Genetics}
+\author{Kevin Korfmann, Nathaniel S. Pope, Melinda Meleghy, Aur\'elien Tellier, and Andrew D. Kern}
+\correspondingauthor{Kevin Korfmann.\\E-mail: korfmann@sas.upenn.edu}
+
+\raggedbottom
+
+\begin{document}
+\maketitle
+
+\SItext
+
+%% --- Supplementary Methods ---
+\section*{Supplementary Methods}
+
+\subsection*{Things We Tried}
+
+\paragraph{Preprocessing mutational patterns}
+We explored representing local genealogical configurations via a discrete
+``codebook'' of mutation patterns, allowing the model to operate on higher-level
+coalescent motifs rather than raw mutation arrays. In practice, the
+combinatorial growth with sample size and window length made codebook learning
+brittle, non-extensible, and poorly suited for scenarios requiring inference of
+multiple coalescent times. Performance degraded sharply outside the specific
+training regimes.
+
+\paragraph{Hand-rolled convolutions via multi-scale windows.}
+To mimic convolutional behavior, the current model uses multiple window sizes
+in the embedding stack. Single-scale tokenization consistently undercaptured
+rare, localized events such as sharp TMRCA dips. Although we considered adding
+true convolution operators, the multi-scale approach remained the simplest, at the cost of increased storage and additional input processing requirements.
+
+\paragraph{Architectural upgrades with limited impact.}
+We evaluated more advanced attention variants (linear
+attention, multi-query attention) but observed negligible gains given our short
+contexts (about 500 tokens per 1\,Mb). These optimizations mainly benefit
+very long-sequence models, and the added engineering complexity was not
+justified.
+
+\paragraph{Splitting the encoder and decoder.}
+We also considered a cleaner encoder-decoder separation for improved
+maintainability and the possibility of halving context length by compressing
+the mutation stream prior to temporal decoding. While promising-especially in
+light of simpler key-value caching-the monolithic GPT-like architecture appeared conceptually simpler, though we may return to this design in future models.
+
+\paragraph{Training mixtures without repetition.}
+Early training experiments drew demographies randomly without repetition across
+epochs. This prevented the model from seeing the same statistical structure
+often enough to form stable internal representations and led to degraded
+inference accuracy. Reintroducing repetition-training many iterations of the
+same demography with different random seeds-proved essential for stable
+learning and effective generalization.
+
+
+\subsection*{Algorithmic Details of Preprocessing}
+For processing the input the complete algorithmic details are  provided in Algorithm~\ref{alg:alg1} below.
+This describes the internal construction of the tensor to be ingested by our model.
+
+\begin{algorithm}[H]
+\caption{ProcessGenotypeMatrixAndPositions (Vectorized)}\label{alg:vectorized}
+\begin{algorithmic}[1]
+\Require $G \in \mathbb{Z}^{N \times M}$ \Comment{Genotype matrix (N samples, M sites)}
+\Require $P \in \mathbb{R}^M$ \Comment{Site positions ($P[j]$ is the position of site $j$)}
+\Require $L$ \Comment{Sequence length (total genomic range)}
+\Require $W_m = [2, 8, 32, 64]$ \Comment{Window multipliers}
+\Require $w = 4000$ \Comment{Base window size}
+\Require $s = 2000$ \Comment{Step size}
+\Require $A, B$ \Comment{Pivot sample indices}
+\Require $\texttt{xor\_ops}$ \Comment{Logical operation: XOR or XNOR}
+\Ensure $X \in \mathbb{Z}^{2 \times |W_m| \times K \times N}$ \Comment{Feature matrix, with $K=\lceil L/s \rceil$}
+
+\State \textbf{// Step 1: Compute Logical Frequencies (Vectorized)}
+\State $F \gets \text{sum}(G,\text{axis}=0)$ \Comment{Vectorized sum over samples; $F\in\mathbb{Z}^{1\times M}$}
+\State $L\_val_{XOR} \gets G[A, :] \oplus G[B, :]$
+\State $L\_val_{XNOR} \gets \neg\bigl(G[A, :] \oplus G[B, :]\bigr)$
+\State $F\_logic[0, :] \gets F \odot L\_val_{XOR}$ \Comment{For XOR}
+\State $F\_logic[1, :] \gets F \odot L\_val_{XNOR}$ \Comment{For XNOR}
+\smallskip
+
+\State \textbf{// Step 2: Define Sliding Windows (Vectorized Boundaries)}
+\State $K \gets \lceil L/s \rceil$
+\State $\mathbf{start} \gets s \cdot [\,0,1,\ldots, K-1\,]$ \Comment{Vector of window start positions}
+\For{$i \gets 1$ \textbf{to} $|W_m|$}
+    \State $W_{\text{end}}[i] \gets w \cdot W_m[i]$
+\EndFor
+\State $\mathbf{end} \gets \min\Bigl(\mathbf{start} + W_{\text{end}},\, L\Bigr)$ \Comment{Broadcasted over multipliers}
+\State \textbf{For each} window index $k$ and multiplier index $i$, define
+\[
+W[k,i] = \{\, j \mid P[j] \in [\,\mathbf{start}[k],\, \mathbf{end}[i]\,] \,\}
+\]
+
+\State \textbf{// Step 3: Compute Site Frequency Spectrum (Vectorized Bincount)}
+\For{$d \in \{0,1\}$}
+    \For{$i \gets 1$ \textbf{to} $|W_m|$}
+        \For{$k \gets 0$ \textbf{to} $K-1$}
+            \State $X[d,i,k,:] \gets \text{bincount}\Bigl(F\_logic[d, W[k,i]],\, \text{minlength}=N\Bigr)$
+        \EndFor
+    \EndFor
+\EndFor
+\smallskip
+
+\State \Return $X$
+\end{algorithmic}
+\label{alg:alg1}
+\end{algorithm}
+
+\nopagebreak[4]
+
+The input module projecting SFS values per window of specified size into latent space in parallel for 500 windows, 4 window sizes, and 2 states (heterogeneous vs. homogeneous) and B batches.
+
+\nopagebreak[4]
+
+\begin{algorithm}[H]
+\caption{ProjectionReplacingEmbeddingTable}\label{alg:projEmbed}
+\begin{algorithmic}[1]
+\Require $x \in \mathbb{R}^{B \times Z \times  WS \times K \times N}$, parameters $W_1, b_1, W_2, b_2$, weights $w_1, w_2$
+\Ensure $\hat{x} \in \mathbb{R}^{B \times K \times d}$
+\State $x[...,0] \gets 0$
+\State $\phi_1(x) \gets \operatorname{GELU}(W_1\,x + b_1)$
+\State $\phi_2(x) \gets W_2\,x + b_2$
+\State $\hat{x} \gets w_1\,\phi_1(x) + w_2\,\phi_2(x)$ 
+\State $\hat{x} \gets \operatorname{reshape}(\hat{x}, [B,\,K,\,E])$ \\
+\Return $\hat{x}$
+\end{algorithmic}
+\end{algorithm}
+
+
+\subsection*{Model Configuration}
+
+Hyperparameter specifications of our narrow and broad model.
+
+\begin{table}[ht]
+    \centering
+    \caption{Token-Free Decoder Model Configuration}
+    \label{tab:model-config}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Parameter} & \textbf{Narrow Model} & \textbf{Broad Model} \\
+        \midrule
+        Number of Layers ($n_{\text{layer}}$)              & 6 & 10 \\
+        Number of Attention Heads ($n_{\text{head}}$)       & 4 & 4 \\
+        Embedding Dimension ($n_{\text{embd}}$)             & 400 & 400 \\
+        Dropout Rate                                        & 0.1 & 0.1 \\
+        Bias in Linear Layers                               & False & False \\
+        Number of Samples per Forward Pass                & 50 & 50 \\
+        Sample Scale Embedding Factor                       & 2 & 2 \\
+        Output Dimension ($\text{output}_{\text{dim}}$)     & 326 & 326 \\
+        Combined Feature Dimension (${\text{combined}}_{\text{dim}}$) & 1001 & 1001 \\
+        \textbf{Total parameters} in millions & $\approx$ 11.7 & $\approx$ 19.5 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+
+\subsection*{Datasets and Training Details}
+
+The following sections provide detailed information on dataset construction, including coalescence parameter initialization, dataset composition, and training procedures. 
+Training parameters are organized into distinct sets: a single parameterization for the narrow model, designed to approximate a constant-size human demographic scenario, and an expanded set for the broad model encompassing most demographic models from \stdpopsim v0.2. 
+Models from \stdpopsim v0.3 are reserved exclusively for validation and were not used during training.
+
+
+We implemented our models using PyTorch Lightning to streamline code management,
+including multi-GPU training and loss tracking. 
+Matrix multiplication precision was set to float32 (medium), 
+relying on PyTorch Lightning's internal precision handling, 
+and we did not use additional manual autocasting with 'bf16-mixed' during training. 
+To optimize memory efficiency and storage, datasets were stored in float16 format.
+
+The model was trained for five epochs using the \texttt{AdamW} optimizer with a learning rate of $3\times10^{-4}$,
+which was gradually decreased during training via cosine annealing.
+
+Fine-tuned models were trained for only two epochs on their respective datasets, using a learning rate reduced by a factor of ten. For more information about specific training commands, we refer to the online manual.
+
+Each training sample of a batch consists of 500 windows, followed by a start token, 
+which is the second row of the embedding table for time discretization 
+(the first row is reserved for potential padding, but is not used in this implementation).
+This is then followed by 500 coalescent times. The target sequence is simply a right-shifted version of the coalescent times, beginning with the first coalescent event.
+Accordingly, the model is trained in the same manner as standard language models, using negative log-likelihood loss and a causal mask. The causal mask has been adapted for translation within the relevant attention layers. Specifically, we used a fused-causal attention mask, which lets the decoder distinguish mutation from coalescence tokens when "looking back" over the sequence: when predicting a mutation, the model can attend to all previous tokens, but when predicting a coalescence, it can attend to all earlier mutations and only to past (not future) coalescences. This preserves strict causal ordering for sequence decoding while keeping the full, fixed mutation history visible at every step.
+
+
+We organized our training data into four distinct sets. The first is a large base dataset,
+used to train the narrow model, with parameters chosen to approximate human simulations.
+This set consists of a single demographic scenario with constant population size
+(see Table~\ref{tab:base-dataset}). 
+We also performed fine tuning of the narrow model for a
+few auxiliary models (Table~\ref{tab:base-dataset-extension}).
+The third dataset is the \stdpopsim v0.2 dataset (see Table~\ref{tab:stdpopsim-dataset}), 
+the main dataset used in this study that we call the broad model. 
+The final dataset comprises \stdpopsim v0.3 models, which are used for evaluation (see Table~\ref{tab:stdpopsim-dataset-v0.3}).
+
+
+\begin{table}[b]
+    \centering
+    \caption{Base Dataset (Approx.\ for Human Parameters)}
+    \label{tab:base-dataset}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Parameter} & \textbf{Value} \\
+        \midrule
+        Population Model           & Constant Demography \\
+        Population Size            & $2 \times 10^4$ \\
+        Mutation Rate              & $1.29 \times 10^{-8}$ per Base \\
+        Recombination Rate         & $1.28 \times 10^{-8}$  per Base\\
+        Simulations      & $2 \times 10^6$ \\
+        Sequence Length            & 1 Mb \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+
+
+\begin{table}[t]
+    \centering
+    \caption{Base Dataset Extension (auxiliary Dataset): Model Parameters *}
+    \label{tab:base-dataset-extension}
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{llll}
+        \toprule
+        \textbf{Model} & \textbf{Abbreviation} & \textbf{Values} & \textbf{Description} \\
+        \midrule
+        
+        \multirow{3}{*}{\texttt{ne.constant}}
+            & $N_e$ & $10^4,\; 2\times10^4,\; 4\times10^4$ & Effective population size \\
+            & $\mu$ & $1\times10^{-8}$, $5\times10^{-8}$ & Mutation rate per base \\
+            & $r$   & $1\times10^{-8}$, $5\times10^{-8}$ & Recombination rate per base \\
+        \midrule
+        
+        \multirow{4}{*}{\texttt{ne.sawtooth}}
+            & $N_e$      & $10^4,\; 2\times10^4,\; 4\times10^4$  & Effective population size \\
+            & Magnitude  & \texttt{strong, medium, weak}            & Amplitude of $N_e$ oscillations \\
+            & $\mu$      & $1\times10^{-8}$, $5\times10^{-8}$       & Mutation rate per base \\
+            & $r$        & $1\times10^{-8}$, $5\times10^{-8}$       & Recombination rate per base \\
+        \midrule
+        
+        \multirow{4}{*}{\texttt{island.3pop}}
+            & $N_e$   & $10^4,\; 2\times10^4,\; 4\times10^4$  & Effective population size \\
+            & $m$     & $0.05,\; 0.2$                          & Migration rate between islands \\
+            & $\mu$   & $1\times10^{-8}$                        & Mutation rate per base \\
+            & $r$     & $1\times10^{-8}$                        & Recombination rate per base \\
+        \midrule
+        
+        \multirow{4}{*}{\texttt{hard\_sweeps}}
+            & $N_e$   & $10^4,\; 2\times10^4,\; 4\times10^4$  & Effective population size \\
+            & $p_s$   & $2.5\times10^{-5},\; 1\times10^{-5},\; 7.5\times10^{-5}$ & Selected site position or selection coefficient \\
+            & $\mu$   & $1\times10^{-8}$, $5\times10^{-8}$       & Mutation rate per base \\
+            & $r$     & $1\times10^{-8}$, $5\times10^{-8}$       & Recombination rate per base \\
+        \bottomrule
+    \end{tabular}
+    }
+    \vspace{1ex}
+    
+    {\footnotesize%
+    * Within each model, all‐vs‐all parameter combinations were simulated; the only exception (when $\mu = 5\times10^{-8}$ \& $r = 5\times10^{-8}$) was skipped due to long simulation times.%
+    }
+\end{table}
+
+
+
+\begin{table}[t]
+    \centering
+    \caption{\stdpopsim dataset (v0.2): Simulations configuration for training}
+    \label{tab:stdpopsim-dataset}
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{llll}
+        \toprule
+        \textbf{Species} & \textbf{Demographic Model} & \textbf{Genetic Map} & \textbf{Simulations} \\
+        \midrule
+        \emph{Aedes aegypti}    & PieceWiseConstant & & $6.0\times10^{4}$ \\
+        \emph{Anas platyrhynchos}    & MallardBlackDuck\_2L19 & & $5.0\times10^{3}$ \\
+        \emph{Anolis carolinensis}    & PieceWiseConstant & & $1.0\times10^{3}$ \\
+        \emph{Anopheles gambiae}    & GabonAg1000G\_1A17 & & $2.0\times10^{4}$ \\
+        \emph{Arabidopsis thaliana}    & SouthMiddleAtlas\_1D17 & SalomeAveraged\_TAIR10 & $1.0\times10^{5}$ \\
+        \emph{Arabidopsis thaliana}    & African2Epoch\_1H18 & SalomeAveraged\_TAIR10 & $1.0\times10^{5}$ \\
+        \emph{Arabidopsis thaliana}    & African3Epoch\_1H18 & SalomeAveraged\_TAIR10 & $1.0\times10^{5}$ \\        
+        \emph{Bos taurus}    & HolsteinFriesian\_1M13 & & $2.0\times10^{5}$ \\
+        \emph{Caenorhabditis elegans}    & PieceWiseConstant & RockmanRIAIL\_ce11 & $2.0\times10^{5}$ \\
+        \emph{Canis familiaris}    & PieceWiseConstant & Campbell2016\_CanFam3\_1 & $2.0\times10^{5}$ \\
+        \emph{Drosophila melanogaster}    & African3Epoch\_1S16 & ComeronCrossoverV2\_dm6 & $1.0\times10^{3}$ \\
+        \emph{Drosophila melanogaster}    & OoA\_2L06 & ComeronCrossoverV2\_dm6 & $1.0\times10^{3}$ \\
+        \emph{Drosophila sechellia}    & PieceWiseConstant & & $6.0\times10^{4}$ \\
+        \emph{Gasterosteus aculeatus}    & PieceWiseConstant & & $2.0\times10^{5}$ \\
+        \emph{Helianthus annuus}    & PieceWiseConstant & & $6.0\times10^{4}$ \\
+        \emph{Homo sapiens}    & OoAExtNeaAdmixturePulse\_3I21 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & OoA\_3G09 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & OoA\_2T12 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & Africa\_1T12 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & AmericanAdmixture\_4B18 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & OoAArchaicAdmixture\_5R19 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & Zigzag\_1S14 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & AshkSub\_7G19 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & OoA\_4J17 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Homo sapiens}    & Africa\_1B08 & HapMapII\_GRCh38 & $2.0\times10^{5}$ \\
+        \emph{Pan troglodytes}    & BonoboGhost\_4K19 & & $2.0\times10^{5}$ \\
+        \emph{Papio anubis}    & SinglePopSMCpp\_1W22 & Pyrho\_PAnubis1\_0 & $2.0\times10^{5}$ \\
+        \emph{Pongo abelii}    & TwoSpecies\_2L11 & NaterPP\_PonAbe3 & $2.0\times10^{5}$ \\
+        \bottomrule
+    \end{tabular}
+    }
+\end{table}
+
+
+
+\begin{table}[h!]
+    \centering
+    \caption{\stdpopsim dataset (v0.3): Simulations configuration for evaluation}
+    \label{tab:stdpopsim-dataset-v0.3}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Species} & \textbf{Demographic Model}\\
+        \midrule
+        \emph{Gorilla gorilla}    & GorillaGhost\_5P23 \\
+        \emph{Oryza sativa}    & BottleneckMigration\_3C07  \\
+        \emph{Rattus norvegicus}    & PieceWiseConstant  \\
+        \emph{Sus scrofa}    & PieceWiseConstant \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+
+\subsection*{Calibration of the Molecular Clock}
+\label{app:clock}
+
+\cxtkit output is run in replicates (default 15), that together provide a distribution over TMRCA trajectories. 
+Although the language model is agnostic to mutation rate (in the sense that this is not provided as an explicit input, and
+the model sees data generated under many mutation rates during training), it will generally be desirable to condition on a particular mutation rate/molecular clock for $N_{e}$ calibration purposes. 
+This is done by scaling the raw predictions such that expected nucleotide diversity matches the observed nucleotide diversity
+across the full context (e.g. the 1Mb sequence).
+Empirically, this first-order correction is most helpful when the model is applied to data that is atypical relative to the 
+training simulations (see Figure \ref{fig:correction-heatmap}).
+Crucially, the relative TMRCA is highly accurate even in out-of-distribution scenarios, so that the first order correction
+is generally sufficient to make bias and mean squared error constant across a wide range of scenarios.
+
+One issue is that a deterministic first-order correction will reduce variability in \cxtkit's ``posterior'' samples-- 
+for example, TMRCA trajectories that are constant across the windows but have distinct values across replicates, would be all collapsed to the same value. 
+Thus, we model the correction factor probabilistically to preserve replicate variability. 
+For a given pivot pair $i$, we assume the observed mutation count $y_i$ follows a Poisson model:
+\[
+y_i \sim \text{Pois}\left(2 \mu c_i s \sum_j t_{ij}\right),
+\]
+where $s$ is the window size, $\mu$ is the mutation rate, $t_{ij}$ is the predicted TMRCA in window $j$ of replicate $i$, 
+and $c_i$ is the per-replicate correction factor. Under an improper constant prior, this yields a posterior:
+\[
+c_i \sim \text{Gamma}\left(y_i + 1,\; 2 \mu s \sum_j t_{ij}\right).
+\]
+We then sample an independent $c_i$ for each replicate and apply it to all windows in that replicate. 
+This propagates uncertainty from diversity estimation into the corrected predictions. 
+In practice, the difference is negligible when mutation counts are large, as the posterior concentrates around the maximum likelihood estimate. 
+However, when mutation counts are sparse or when the model produces flat TMRCA profiles, 
+this stochastic correction helps avoid degeneracies (e.g., where there are no mutations and the MLE is undefined). 
+
+\subsection*{Calibration of Approximate Posteriors}
+\label{sec:calibration}
+
+While the results above focus on point accuracy, \cxtkit also samples TMRCA trajectories from an approximate posterior, 
+enabling uncertainty quantification in addition to producing point estimates (e.g. the posterior mean). 
+We therefore tested empirically
+whether the marginal approximate posteriors are (i) well-calibrated in the sense of providing correct frequentist
+coverage of the true TMRCA, 
+and (ii) consistent, in the sense that the posterior concentrates as the amount of mutational information increases.
+
+To assess these properties, we first simulated 1{,}000 completely independent pivot pairs under three demographic scenarios, 
+including one drawn from the out-of-training \stdpopsim v0.3 release (\emph{Oryza sativa}).
+For each pair, we computed posterior intervals for the TMRCA in each 2\,kb window using
+100 \cxtkit-sampled trajectories. 
+For an exact posterior, an interval containing a fraction $\alpha$ of posterior mass contains the true value with probability $\alpha$. We therefore evaluate calibration by computing, across windows, the empirical fraction of true TMRCAs
+that fall within posterior intervals of varying nominal mass. 
+Second, we evaluate consistency by measuring how the average posterior variance changes as a function of mutation rate,
+scaled by $0.5$, $1$, and $2$ relative to the species-specific mutation rate reported in the \stdpopsim catalog. 
+Both of these measures are calculated with respect to the position within the full 1Mb prediction window,
+since we expect performance to degrade near the
+boundaries where the local mutational context is truncated.
+
+Across three distinct parameter regimes, 
+we find that \cxtkit produces generally well-calibrated posterior samples across
+most positions within the 1\,Mb prediction window (Supplementary Figure \ref{fig:posterior-calibration}, top row). 
+These approximate posteriors are typically slightly
+over-concentrated high nominal coverage (e.g., intervals containing 95\% of the posterior mass contain the true
+TMRCA roughly 92\% of the time), 
+but are otherwise remarkably stationary: the empirical coverage declines appreciably only in the final 2\,kb window. 
+This drop appears to be driven by a tendency of the trained model to predict occasional jumps in the last window,
+which can be addressed in practice by omitting that window prior to centering the predictions. 
+Consistent with posterior concentration,
+increasing (decreasing) mutational density, causes the posterior intervals to contract (expand)
+reflecting increased (decreased) information (Supplementary Figure \ref{fig:posterior-calibration}, bottom row). 
+As expected, windows near the boundaries also exhibit greater uncertainty, consistent with truncation of the local mutational context.
+
+
+Together, these findings indicate that the approximate posteriors produced by \cxtkit 
+provide reliable uncertainty quantification for predicted coalescence times,
+across demographic scenarios and mutational densities.
+This is a key strength of the method, particularly because
+posterior sampling is so computationally efficient.
+
+
+\subsection*{Estimating Population Size via Instantaneous Inverse Coalescence Rates}
+\label{app:ne}
+
+We estimate the instantaneous coalescence rate from a set of ancestor coalescence times by discretizing time into logarithmically spaced windows ($T_{\max}=40$). Specifically, we define the time grid using
+
+\[
+\texttt{time\_windows} = \logspace\left(2, \left\lfloor \log_{10}(T_{\max}) \right\rfloor, N + 1 \right)
+\]
+
+where $T_{\max}$ is the maximum simulation time and $N$ is the number of desired windows. 
+We then explicitly set the first window edge to 0 by assigning \texttt{time\_windows[0] = 0.0}. 
+This creates $N$ non-overlapping intervals $[t_0, t_1), [t_1, t_2), \dots, [t_{N-1}, t_N)$ 
+that cover the relevant timescale on a logarithmic scale, providing finer resolution for more recent coalescent events. 
+
+Let $T_1, T_2, \dots, T_n$ be the observed coalescence times. 
+For each window $[t_i, t_{i+1})$, we compute the proportion of events 
+falling into that bin, giving a discretized probability density function (PDF), 
+denoted $p_i$. The corresponding cumulative distribution function (CDF) 
+is $F(t_i) = \sum_{j < i} p_j$. Assuming a memoryless coalescence process (i.e., a Poisson process), 
+the instantaneous rate $\lambda(t)$ satisfies:
+
+\[
+\lambda(t) = \frac{f(t)}{1 - F(t)}
+\]
+
+where $f(t)$ is the density and $1 - F(t)$ is the survival function. 
+Integrating this rate over the interval $[t_i, t_{i+1})$ gives:
+
+\[
+\int_{t_i}^{t_{i+1}} \lambda(t) \, dt = \log\left( \frac{1 - F(t_i)}{1 - F(t_{i+1})} \right)
+\]
+
+and dividing by the window width $\Delta t = t_{i+1} - t_i$, 
+we estimate the average coalescence rate in the interval as:
+
+\[
+\hat{\lambda}_i = \frac{1}{\Delta t} \log\left( \frac{1 - F(t_i)}{1 - F(t_{i+1})} \right)
+\]
+
+For the final window (where the survival function becomes too small), 
+we estimate the rate via the inverse of the mean residual coalescence time:
+
+\[
+\hat{\lambda}_{\text{last}} = \left( \mathbb{E}[T - t_{\text{last}} \mid T \geq t_{\text{last}}] \right)^{-1}
+\]
+
+This approach provides a nonparametric, smoothed estimate of the coalescence rate as a function of time, suitable for demographic inference.
+
+
+\subsection*{Computational Efficiency and Scaling}
+
+We compared wall-clock runtime for \cxtkit, SMC++, and \singer 
+across increasing numbers of inferred pairwise coalescence trajectories ( Figure~\ref{fig:time_benchmark}). 
+Because these methods differ fundamentally in how inference is performed, 
+runtime is evaluated separately from statistical accuracy.
+\smcpp achieves fast local decoding, but total runtime is dominated by preprocessing and composite-likelihood 
+optimization, both of which increase with dataset size. 
+Note that \smcpp also assumes unphased samples---a constraint that could be addressed by restructuring the VCF file itself, 
+but which we omit here, as runtimes are already large. 
+In contrast, \cxtkit performs fully amortized inference: 
+after training, runtime scales approximately linearly with the number of inferred pairs and shows near-linear speedups with additional GPUs. 
+Runtime is largely insensitive to recombination rate, 
+enabling predictable performance across parameter regimes, 
+but preprocessing overhead is noticeable 
+when going beyond 50 samples.
+\singer shows competitive accuracy but substantially higher runtime, 
+with sensitivity to recombination parameters reflecting its reliance on explicit genealogical sampling. 
+Overall, these results highlight a qualitative difference in computational scaling: 
+while likelihood-based and MCMC-based methods incur increasing cost as genealogical complexity grows, 
+\cxtkit shifts this cost to training, enabling fast inference at application time, 
+while as of now being constrained by the pairwise binomial scaling with the number of samples.
+
+
+\begin{table}[ht]
+    \centering
+    \caption{
+        Mean squared error (MSE; lower is better) for three approaches across two demographic scenarios. We report results separately for the narrow and broad variants of \cxtkit (that \cxtkit-adapter uses the broad model as its basis) alongside \textbf{Singer+Polegon} and \smcpp reflecting training on a single demographic regime (constant size) versus a fluctuating demographic history (sawtooth), respectively.
+    }
+    \label{tab:mses}
+    \begin{tabular}{lcc}
+    \toprule
+    \textbf{Method}
+        & \textbf{Constant}
+        & \textbf{Sawtooth} \\
+    \midrule
+    \cxtkit-narrow      & 0.2531          & 0.7496 \\
+    \cxtkit-broad       & --              & \textbf{0.1796} \\
+    \cxtkit-adapter     & 0.2631          & 0.1946 \\
+    Singer+Polegon      & \textbf{0.2470} & 0.2129 \\
+    \smcpp              & 0.8685          & 1.7919 \\
+    \bottomrule
+    \end{tabular}
+\end{table}
+
+
+%% --- Supplementary Figures ---
+\clearpage
+
+%%% Fig S1: Processing schematic
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/preproc.png}
+\caption{Processing of a genotype matrix, as detailed in Algorithm~\ref{alg:vectorized}. This figure provides a schematic overview. Starting at (\textbf{A}), we compute absolute variant frequencies across 50 samples (a fixed hyperparameter) (1). A genomic region is divided into 500 windows. We focus on a pivot pair (framed in blue), extract it, and classify sites as heterogeneous or homogeneous. Each site is scaled by its SFS class, and each window is expanded into the full sparse SFS dimensions of 50 (see input tensor, bottom right). This process repeats for three additional windows (\textbf{B--D}), yielding a complete input tensor of shape (2, 4, 500, 50) per pair, with the SFS aggregating information across all samples.}
+\label{fig:proc}
+\end{figure}
+
+%%% Fig S2: Calibration bias/MSE heatmap (Zigzag perturbations)
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/supp-fig-bias-mutcoal.png}
+\caption{
+The impact of calibrating the molecular clock using observed nucleotide diversity (see section ``Calibration of Molecular Clock'' in methods), using simulations from perturbations of the Zigzag model in the \stdpopsim catalog. The x-axis is a scaling of the Markov generator for the coalescent process, that increases the average TMRCA while keeping the shape of the site frequency spectra constant. The y-axis is a scaling of the mutation rate. The two columns correspond to uncalibrated and calibrated \cxtkit predictions (e.g. in the former, the language model is predicting absolute TMRCA; and in the latter relative TMRCA). The two rows are bias (top) and mean squared error (bottom) relative to the true TMRCA, calculated from 30 independent simulations per grid cell. The unperturbed demography (which the language model sees during training) is the green point in the center of each heatmap. As the model is perturbed, the uncalibrated \cxtkit predictions become substantially biased in a fashion that is nonlinear with regards to the magnitude of the perturbations (left column); reflecting the fact that the TMRCAs, mutation rate, and recombination rate are not jointly identifiable. However, relative changes in TMRCA are predicted accurately, so that centering the TMRCA trajectories around the observed nucleotide diversity for each pivot pair (e.g. conditioning on the mutation rate) removes the bias regardless of the degree of perturbation. Thus, after calibration (right column) the MSE for \cxtkit predictions follows a gradient of mutational density.
+}
+\label{fig:correction-heatmap}
+\end{figure}
+
+%%% Fig S3: Mutations/recombinations density across Zigzag perturbations
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/supp-fig-stats-mutcoal.png}
+\caption{The density of mutations and recombination events across perturbations of the Zigzag \stdpopsim model, for the simulations shown in Figure~\ref{fig:correction-heatmap}.}
+\label{fig:stats-mutcoal}
+\end{figure}
+
+%%% Fig S4: Adapter fine-tuning (constant + sawtooth)
+\begin{figure}[h!]
+\centering
+\includegraphics[width=\textwidth]{figures/adapter_0.png}
+\caption{$\cxtkit$s broad model fine-tuned with a low-parameter adapter to account for small sample sizes. On the left, $\cxtkit$ is demonstrated on a constant demography, while on the right the sawtooth scenario is presented.}
+\label{fig:adapter}
+\end{figure}
+
+%%% Fig S5: Window resolution on AnoGam
+\begin{figure}[h!]
+\centering
+\includegraphics[width=\textwidth]{figures/figure_S2_2.png}
+\caption{$\cxtkit$s broad model (left) on \stdpopsim AnoGam parameterization at window resolution 2 Kb, in the middle at 0.2 Kb and after fine-tuning on large \stdpopsim species larger than 100 k $N_e$.}
+\label{fig:anogam_w200}
+\end{figure}
+
+%%% Fig S6: Runtime benchmark
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/figS6_runtime_benchmark.png}
+\caption{Wall-clock runtime (log scale) is shown as a function of the number of inferred haplotype pairs for SMC++ (solid; decomposed into total, preprocessing+estimate, and decoding posterior), \cxtkit (dashed blue; 1 to 3 GPUs), and \singer (dashed green; two mutation-rate settings). Right panel shows the fold difference between \singer and \cxtkit with respect to recombination rate or number of GPUs. } 
+\label{fig:time_benchmark}
+\end{figure}
+
+%%% Marginal coalescence distributions (no genetic map) — baseline
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/figure3.pdf}
+\caption{Evaluation of marginal coalescence distribution inference (blue line) against the true  
+distribution (black line), probing the model's capacity to distinguish among many  
+scenarios based on context alone. 
+The broad model's ability to infer a \stdpopsim{}~v0.2 coalescence distribution is tested, 
+which includes diverse mutation and recombination rates, as well as demographic scenarios. This distribution is obtained by aggregating pairwise inferences and visualizing the result as a  
+kernel density for each scenario. All results shown are from new simulations, not included in the original training dataset. No genetic map was used for the inference shown here;
+the model itself was trained with and without genetic maps. 
+For inferences with an underlying genetic map see Figure~\ref{fig:margdist_map}.}
+\label{fig:margdist_nomap}
+\end{figure}
+
+%%% Marginal distributions with genetic map
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/figure3_map.pdf}
+\caption{Evaluation of inferred marginal coalescence distributions (dashed line) against the true distributions (shaded line), highlighting the model's \textbf{capacity} - its ability to distinguish scenarios based on context alone. The model generalizes to stdpopsim v0.2 simulations with varying mutation, recombination rates, and demography. Distributions are aggregated from pairwise inferences and visualized as kernel densities. All results are from new simulations, excluded from training. Unlike the preceding figure (Fig.~\ref{fig:margdist_nomap}), this one includes simulations with a genetic map.}
+\label{fig:margdist_map}
+\end{figure}
+
+
+%%% Fig S9: Posterior calibration
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/posterior_calibration.png}
+\caption{
+The approximate posterior distributions sampled from by \cxtkit give well-calibrated estimates of uncertainty for predicted TMRCAs, across a range of scenarios. Top row: the proportion of true TMRCAs that fall within credibility intervals of a given width (e.g. a given proportion of posterior mass), as a function of position in the 1Mb prediction frame. Credibility intervals are calculated from quantiles of 100 samples from the approximate posterior for each pivot pair, and the proportion covering the true TMRCAs are calculated over 1000 independent pivot pairs (e.g. from distinct genealogical simulations). The expected proportions (for an exact posterior) are shown as dashed lines. Empirically, the approximate posteriors are asymptotically well-calibrated, although slightly over-concentrated for larger interval widths (likely due to the time discretization used by \cxtkit). The decrease in coverage for the last 2Kb window is due to a tendency of the LLM to introduce large jumps in TMRCA in this window. Bottom row: the posterior variance, averaged over 1000 independent pivot pairs, as a function of position in the prediction frame and mutation rate (where $\mu$ stands for the species' mutation rate in \stdpopsim). As mutational information accrues, the posteriors become more precise; and lose precision towards the boundaries of the prediction frame where local context has been clipped.
+}
+\label{fig:posterior-calibration}
+\end{figure}
+
+%%% Interpolation grid
+\begin{figure}
+\centering
+\includegraphics[width=0.8\textwidth]{figures/figS11_interpolation_grid.png}
+\caption{Interpretation and limitations of $\cxtkit$ by testing various recombination to mutation ratios (top left). The ratios have been chosen in such a way that most of stdpopsim v0.2 simulations, with the exception of some outliers, fall into this rectangle (top right). The middle heatmaps show MSE and KLD values of $\cxtkit$ inferences (uncalibrated) over the entire grid, while the bottom heatmaps show mutation-rate-calibrated metrics. For four representative examples from the corners of this grid, see Figure~\ref{fig:bias-mutcoal}.}
+\label{fig:interp_corr}
+\end{figure}
+
+%%% Representative TMRCA examples from corners of interpolation grid
+\begin{figure}[h!]
+\centering
+\begin{subfigure}[t]{0.49\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/heatmap_examples.png}
+\subcaption{Uncalibrated}
+\end{subfigure}%
+\hfill
+\begin{subfigure}[t]{0.49\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/heatmap_examples_corrected.png}
+\subcaption{Calibrated}
+\end{subfigure}
+\caption{Interpretation and limitations of $\cxtkit$ zoomed into four representative cases from the corners of the interpolation grid (Figure~\ref{fig:interp_corr}), starting from top left to bottom right, with MSE and KLD indicated in the subtitles. These plots show the TMRCA along the sequence, while both right sides show the marginal distribution, true and inferred, respectively. The left four panels (\textbf{a}) are uncalibrated and the right four (\textbf{b}) after calibration.}
+\label{fig:bias-mutcoal}
+\end{figure}
+
+%%% Fig S10: Cross coalescence
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/figS10_cross_coalescence.png}
+\caption{Inverse-instantaneous coalescence rate calculation of a two population out-of-Africa demography for \textit{H. sapiens} using (\textbf{left}) a mixture of African and European samples for cross-coalescence rate estimation, (\textbf{middle}) only African samples or (\textbf{right}) only European samples. 
+The inference of pairwise-coalescence events leads to the implicit inference of demography estimates 
+through the marginal coalescence distribution assuming coalescence occurs as a Poisson process (see methods). 
+For each scenario 10 Mb and 25 diploid samples have been used to achieve resolution throughout the specified time-windows.
+}
+\label{fig:iicr_cross}
+\end{figure}
+
+%%% Anopheles main (cxt only)
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/figure7.pdf}
+\caption{Inference of coalescent-time landscapes in the Ag1000G \emph{A.~gambiae} dataset
+across five African populations using \cxtkit.
+In the upper panel, we analyze the \emph{Rdl} region
+for Burkina Faso, Mali, Cameroon, Ghana, and Uganda.
+For these countries, we infer coalescent times for
+25 focal haplotype pairs per population; for Ghana, we analyze five diploid individuals.
+Light-blue curves indicate per-pair coalescent-time trajectories inferred by \cxtkit,
+with the mean trend shown in darker blue.
+The lower panel shows genome-wide coalescent-time landscapes across the entirety of
+chromosome~2L for Uganda samples.
+Missing data density is shown beneath both the regional and genome-wide panels
+as a genome browser track.
+}
+\label{fig:anopheles_main}
+\end{figure}
+
+%%% Fig S11: Mosquito full comparison
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/figS9_mosquito_comparison.png}
+\caption{Inference of coalescent-time landscapes in the Ag1000G \emph{A.~gambiae} dataset
+across five African populations (Upper panel).
+For Burkina Faso, Mali, Cameroon, and Uganda,
+we analyze 25 focal pairs per population;
+for Ghana, we analysed only five diploid individuals.
+Panels show the \emph{Rdl} region (highlighted in red),
+with estimates from \cxtkit (left),
+\texttt{Singer+Polegon} (middle),
+and \smcpp\ (right).
+Light-blue curves indicate per-pair inferences.
+The lower two panels show coalescent-time landscapes for the entirety of
+chr 2L for Uganda samples.
+Missing data density is shown beneath both the upper and lower panels as 
+a genome browser track.
+}
+\label{fig:anopheles}
+\end{figure}
+
+%%% TMRCA vs recombination
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{figures/tmrca_recom.png}
+\caption{Comparison of the average TMRCA (with generation time of 28 years) for adjacent 100 Kb windows and the average number of recombination breakpoints for 25 pivot pairs using the inferences from the 1000 Genomes Project for chromosome 2 (\textbf{left}) and chromosome 6 (\textbf{right}).}
+\label{fig:tmrca_recom}
+\end{figure}
+
+
+\FloatBarrier
+
+\end{document}

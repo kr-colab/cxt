@@ -259,7 +259,7 @@ def main():
 
     # --- Figure: RDL zoom, 5 pops stacked, missingness in bottom panel ---
     n_pops = len(POP_ORDER)
-    fig, axes = plt.subplots(n_pops, 1, figsize=(6, 9), sharex=True, sharey=True)
+    fig, axes = plt.subplots(n_pops, 1, figsize=(6, 7), sharex=True, sharey=True)
     if n_pops == 1:
         axes = [axes]
 

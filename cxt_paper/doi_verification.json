@@ -1,0 +1,2133 @@
+[
+  {
+    "ref_num": 1,
+    "key": "kingman_coalescent_1982",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "The coalescent",
+        "crossref_value": "The coalescent"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1982",
+        "crossref_value": "1982"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "13",
+        "crossref_value": "13"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "235--248",
+        "crossref_value": "235-248"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1016/0304-4149(82)90011-4",
+        "crossref_value": "10.1016/0304-4149(82)90011-4"
+      }
+    ]
+  },
+  {
+    "ref_num": 2,
+    "key": "hudson_properties_1983",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Properties of a neutral allele model with intragenic recombination",
+        "crossref_value": "Properties of a neutral allele model with intragenic recombination"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1983",
+        "crossref_value": "1983"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "23",
+        "crossref_value": "23"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "183--201",
+        "crossref_value": "183-201"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1016/0040-5809(83)90013-8",
+        "crossref_value": "10.1016/0040-5809(83)90013-8"
+      }
+    ]
+  },
+  {
+    "ref_num": 3,
+    "key": "griffiths_ancestral_1997",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "An ancestral recombination graph",
+        "crossref_value": "An Ancestral Recombination Graph"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1997",
+        "crossref_value": "1997"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "257--270",
+        "crossref_value": "257-270"
+      }
+    ]
+  },
+  {
+    "ref_num": 4,
+    "key": "griffiths_two-locus_1991",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "The Two-Locus Ancestral Graph",
+        "crossref_value": "The Two-Locus Ancestral Graph"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1991",
+        "crossref_value": "1991"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "100--117",
+        "crossref_value": "100-117"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1214/lnms/1215459289",
+        "crossref_value": "10.1214/lnms/1215459289"
+      }
+    ]
+  },
+  {
+    "ref_num": 5,
+    "key": "kelleher_inferring_2019",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Inferring whole-genome histories in large population datasets",
+        "crossref_value": "Inferring whole-genome histories in large population datasets"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2019",
+        "crossref_value": "2019"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "51",
+        "crossref_value": "51"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1330--1338",
+        "crossref_value": "1330-1338"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1038/s41588-019-0483-y",
+        "crossref_value": "10.1038/s41588-019-0483-y"
+      }
+    ]
+  },
+  {
+    "ref_num": 6,
+    "key": "speidel_method_2019",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "A method for genome-wide genealogy estimation for thousands of samples",
+        "crossref_value": "A method for genome-wide genealogy estimation for thousands of samples"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2019",
+        "crossref_value": "2019"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "51",
+        "crossref_value": "51"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1321--1329",
+        "crossref_value": "1321-1329"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1038/s41588-019-0484-x",
+        "crossref_value": "10.1038/s41588-019-0484-x"
+      }
+    ]
+  },
+  {
+    "ref_num": 7,
+    "key": "zhang2023biobank",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Biobank-scale inference of ancestral recombination graphs enables genealogical a",
+        "crossref_value": "Biobank-scale inference of ancestral recombination graphs enables genealogical a"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "55",
+        "crossref_value": "55"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "768--776",
+        "crossref_value": "768-776"
+      }
+    ]
+  },
+  {
+    "ref_num": 8,
+    "key": "deng_robust_2024",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Robust and Accurate Bayesian Inference of Genome-Wide Genealogies for Large Samp",
+        "crossref_value": "Robust and Accurate Bayesian Inference of Genome-Wide Genealogies for Large Samp"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2024",
+        "crossref_value": "2024"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1101/2024.03.16.585351",
+        "crossref_value": "10.1101/2024.03.16.585351"
+      }
+    ]
+  },
+  {
+    "ref_num": 9,
+    "key": "griffiths_ancestral_1996",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Ancestral Inference from Samples of DNA Sequences with Recombination",
+        "crossref_value": "Ancestral Inference from Samples of DNA Sequences with Recombination"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1996",
+        "crossref_value": "1996"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "3",
+        "crossref_value": "3"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "479--502",
+        "crossref_value": "479-502"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1089/cmb.1996.3.479",
+        "crossref_value": "10.1089/cmb.1996.3.479"
+      }
+    ]
+  },
+  {
+    "ref_num": 10,
+    "key": "wiuf_recombination_1999",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Recombination as a point process along sequences",
+        "crossref_value": "Recombination as a Point Process along Sequences"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1999",
+        "crossref_value": "1999"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "55",
+        "crossref_value": "55"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "248--259",
+        "crossref_value": "248-259"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1006/tpbi.1998.1403",
+        "crossref_value": "10.1006/tpbi.1998.1403"
+      }
+    ]
+  },
+  {
+    "ref_num": 11,
+    "key": "mcvean_approximating_2005",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Approximating the coalescent with recombination",
+        "crossref_value": "Approximating the coalescent with recombination"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2005",
+        "crossref_value": "2005"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "360",
+        "crossref_value": "360"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1387--1393",
+        "crossref_value": "1387-1393"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1098/rstb.2005.1673",
+        "crossref_value": "10.1098/rstb.2005.1673"
+      }
+    ]
+  },
+  {
+    "ref_num": 12,
+    "key": "li_inference_2011",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Inference of human population history from individual whole-genome sequences",
+        "crossref_value": "Inference of human population history from individual whole-genome sequences"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2011",
+        "crossref_value": "2011"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "475",
+        "crossref_value": "475"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "493--496",
+        "crossref_value": "493-496"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1038/nature10231",
+        "crossref_value": "10.1038/nature10231"
+      }
+    ]
+  },
+  {
+    "ref_num": 13,
+    "key": "schiffels_inferring_2014",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Inferring human population size and separation history from multiple genome sequ",
+        "crossref_value": "Inferring human population size and separation history from multiple genome sequ"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2014",
+        "crossref_value": "2014"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "46",
+        "crossref_value": "46"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "919--925",
+        "crossref_value": "919-925"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1038/ng.3015",
+        "crossref_value": "10.1038/ng.3015"
+      }
+    ]
+  },
+  {
+    "ref_num": 14,
+    "key": "malaspinas_genomic_2016",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "A genomic history of Aboriginal Australia",
+        "crossref_value": "A genomic history of Aboriginal Australia"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2016",
+        "crossref_value": "2016"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "538",
+        "crossref_value": "538"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "207--214",
+        "crossref_value": "207-214"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1038/nature18299",
+        "crossref_value": "10.1038/nature18299"
+      }
+    ]
+  },
+  {
+    "ref_num": 15,
+    "key": "terhorst_robust_2017",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Robust and scalable inference of population history from hundreds of unphased wh",
+        "crossref_value": "Robust and scalable inference of population history from hundreds of unphased wh"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2017",
+        "crossref_value": "2017"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "49",
+        "crossref_value": "49"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "303--309",
+        "crossref_value": "303-309"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1038/ng.3748",
+        "crossref_value": "10.1038/ng.3748"
+      }
+    ]
+  },
+  {
+    "ref_num": 16,
+    "key": "sellinger_inference_2020",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Inference of past demography, dormancy and self-fertilization rates from whole g",
+        "crossref_value": "Inference of past demography, dormancy and self-fertilization rates from whole g"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2020",
+        "crossref_value": "2020"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "16",
+        "crossref_value": "16"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1371/journal.pgen.1008698",
+        "crossref_value": "10.1371/journal.pgen.1008698"
+      }
+    ]
+  },
+  {
+    "ref_num": 17,
+    "key": "korfmann_simultaneous_2024",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Simultaneous Inference of Past Demography and Selection from the Ancestral Recom",
+        "crossref_value": "Simultaneous Inference of Past Demography and Selection from the Ancestral Recom"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2024",
+        "crossref_value": "2024"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "4",
+        "crossref_value": "4"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "e33"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.24072/pcjournal.397",
+        "crossref_value": "10.24072/pcjournal.397"
+      }
+    ]
+  },
+  {
+    "ref_num": 18,
+    "key": "sellinger_improved_2024",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Improved inference of population histories by integrating genomic and epigenomic",
+        "crossref_value": "Improved inference of population histories by integrating genomic and epigenomic"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2024",
+        "crossref_value": "2024"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "12",
+        "crossref_value": ""
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.7554/elife.89470.2",
+        "crossref_value": "10.7554/elife.89470.2"
+      }
+    ]
+  },
+  {
+    "ref_num": 19,
+    "key": "palamara_high-throughput_2018",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "High-throughput inference of pairwise coalescence times identifies signals of se",
+        "crossref_value": "High-throughput inference of pairwise coalescence times identifies signals of se"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2018",
+        "crossref_value": "2018"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "50",
+        "crossref_value": "50"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1311--1317",
+        "crossref_value": "1311-1317"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1038/s41588-018-0177-x",
+        "crossref_value": "10.1038/s41588-018-0177-x"
+      }
+    ]
+  },
+  {
+    "ref_num": 20,
+    "key": "schweiger_ultra-fast_2023",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Ultra-fast genome-wide inference of pairwise coalescence times",
+        "crossref_value": "Ultra-fast genome-wide inference of pairwise coalescence times"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1101/2023.01.06.522935",
+        "crossref_value": "10.1101/2023.01.06.522935"
+      }
+    ]
+  },
+  {
+    "ref_num": 21,
+    "key": "terhorst_accelerated_2024",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Accelerated Bayesian inference of population size history from recombining seque",
+        "crossref_value": "Accelerated Bayesian inference of population size history from recombining seque"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2024",
+        "crossref_value": "2024"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "2024.03.25.586640",
+        "crossref_value": ""
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1101/2024.03.25.586640",
+        "crossref_value": "10.1101/2024.03.25.586640"
+      }
+    ]
+  },
+  {
+    "ref_num": 22,
+    "key": "beaumont_approximate_2002",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Approximate Bayesian Computation in Population Genetics",
+        "crossref_value": "Approximate Bayesian Computation in Population Genetics"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2002",
+        "crossref_value": "2002"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "162",
+        "crossref_value": "162"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "2025--2035",
+        "crossref_value": "2025-2035"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1093/genetics/162.4.2025",
+        "crossref_value": "10.1093/genetics/162.4.2025"
+      }
+    ]
+  },
+  {
+    "ref_num": 23,
+    "key": "boitard_inferring_2016",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Inferring Population Size History from Large Samples of Genome-Wide Molecular Da",
+        "crossref_value": "Inferring Population Size History from Large Samples of Genome-Wide Molecular Da"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2016",
+        "crossref_value": "2016"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "12",
+        "crossref_value": "12"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1371/journal.pgen.1005877",
+        "crossref_value": "10.1371/journal.pgen.1005877"
+      }
+    ]
+  },
+  {
+    "ref_num": 24,
+    "key": "jay_abc_2019",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "An ABC Method for Whole-Genome Sequence Data: Inferring Paleolithic and Neolithi",
+        "crossref_value": "An ABC Method for Whole-Genome Sequence Data: Inferring Paleolithic and Neolithi"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2019",
+        "crossref_value": "2019"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "36",
+        "crossref_value": "36"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1565--1579",
+        "crossref_value": "1565-1579"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1093/molbev/msz038",
+        "crossref_value": "10.1093/molbev/msz038"
+      }
+    ]
+  },
+  {
+    "ref_num": 25,
+    "key": "min2025neural",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Neural posterior estimation for population genetics",
+        "crossref_value": "Neural posterior estimation for population genetics"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2025",
+        "crossref_value": "2025"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "2025--12",
+        "crossref_value": ""
+      }
+    ]
+  },
+  {
+    "ref_num": 26,
+    "key": "schmidhuber_annotated_2022",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "MISMATCH",
+        "bib_value": "Annotated History of Modern AI and Deep Learning",
+        "crossref_value": "Modern Italian history: an annotated bibliography"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2022",
+        "crossref_value": "1990"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "27"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "27-6105-27-6105"
+      },
+      {
+        "field": "doi",
+        "status": "MISMATCH",
+        "bib_value": "10.48550/arxiv.2212.11279",
+        "crossref_value": "10.5860/choice.27-6105"
+      }
+    ]
+  },
+  {
+    "ref_num": 27,
+    "key": "korfmann_deep_2023",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Deep Learning in Population Genetics",
+        "crossref_value": "Deep Learning in Population Genetics"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "15",
+        "crossref_value": "15"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "evad008",
+        "crossref_value": "evad008"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1093/gbe/evad008",
+        "crossref_value": "10.1093/gbe/evad008"
+      }
+    ]
+  },
+  {
+    "ref_num": 28,
+    "key": "sheehan2016deep",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Deep learning for population genetic inference",
+        "crossref_value": "Deep learning for population genetic inference"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2016",
+        "crossref_value": "2015"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "12",
+        "crossref_value": ""
+      }
+    ]
+  },
+  {
+    "ref_num": 29,
+    "key": "battey_predicting_2020",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Predicting geographic location from genetic variation with deep neural networks",
+        "crossref_value": "Predicting geographic location from genetic variation with deep neural networks"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2020",
+        "crossref_value": "2020"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "9",
+        "crossref_value": "9"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "e54507",
+        "crossref_value": "e54507"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.7554/elife.54507",
+        "crossref_value": "10.7554/elife.54507"
+      }
+    ]
+  },
+  {
+    "ref_num": 30,
+    "key": "kern2018diplos",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "diploS/HIC: an updated approach to classifying selective sweeps",
+        "crossref_value": "diploS/HIC: an updated approach to classifying selective sweeps"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2018",
+        "crossref_value": "2018"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "8",
+        "crossref_value": ""
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1959--1970",
+        "crossref_value": ""
+      }
+    ]
+  },
+  {
+    "ref_num": 31,
+    "key": "flagel_unreasonable_2019",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "The Unreasonable Effectiveness of Convolutional Neural Networks in Population Ge",
+        "crossref_value": "The Unreasonable Effectiveness of Convolutional Neural Networks in Population Ge"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2019",
+        "crossref_value": "2019"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "36",
+        "crossref_value": "36"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "220--238",
+        "crossref_value": "220-238"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1093/molbev/msy224",
+        "crossref_value": "10.1093/molbev/msy224"
+      }
+    ]
+  },
+  {
+    "ref_num": 32,
+    "key": "torada_imagene_2019",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "ImaGene: a convolutional neural network to quantify natural selection from genom",
+        "crossref_value": "ImaGene: a convolutional neural network to quantify natural selection from genom"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2019",
+        "crossref_value": "2019"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "20",
+        "crossref_value": "20"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "337",
+        "crossref_value": "337"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1186/s12859-019-2927-x",
+        "crossref_value": "10.1186/s12859-019-2927-x"
+      }
+    ]
+  },
+  {
+    "ref_num": 33,
+    "key": "sanchez_deep_2021",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Deep learning for population size history inference: Design, comparison and comb",
+        "crossref_value": "Deep learning for population size history inference: Design, comparison and comb"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2021",
+        "crossref_value": "2021"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "21",
+        "crossref_value": "21"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "2645--2660",
+        "crossref_value": "2645-2660"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1111/1755-0998.13224",
+        "crossref_value": "10.1111/1755-0998.13224"
+      }
+    ]
+  },
+  {
+    "ref_num": 34,
+    "key": "whitehouse2023timesweeper",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Timesweeper: accurately identifying selective sweeps using population genomic ti",
+        "crossref_value": "Timesweeper: accurately identifying selective sweeps using population genomic ti"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "224",
+        "crossref_value": "224"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "iyad084",
+        "crossref_value": "iyad084"
+      }
+    ]
+  },
+  {
+    "ref_num": 35,
+    "key": "smith2023dispersal",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Dispersal inference from population genetic variation using a convolutional neur",
+        "crossref_value": "Dispersal inference from population genetic variation using a convolutional neur"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "224",
+        "crossref_value": "224"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "iyad068",
+        "crossref_value": "iyad068"
+      }
+    ]
+  },
+  {
+    "ref_num": 36,
+    "key": "smith2023dispersenn2",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "disperseNN2: a neural network for estimating dispersal distance from georeferenc",
+        "crossref_value": "disperseNN2: a neural network for estimating dispersal distance from georeferenc"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "24",
+        "crossref_value": "24"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "385",
+        "crossref_value": "385"
+      }
+    ]
+  },
+  {
+    "ref_num": 37,
+    "key": "nait_saada_inference_2023",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Inference of Coalescence Times and Variant Ages Using Convolutional Neural Netwo",
+        "crossref_value": "Inference of Coalescence Times and Variant Ages Using Convolutional Neural Netwo"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "40",
+        "crossref_value": "40"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "msad211",
+        "crossref_value": "msad211"
+      },
+      {
+        "field": "doi",
+        "status": "ok",
+        "bib_value": "10.1093/molbev/msad211",
+        "crossref_value": "10.1093/molbev/msad211"
+      }
+    ]
+  },
+  {
+    "ref_num": 38,
+    "key": "adrion2020predicting",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Predicting the landscape of recombination using deep learning",
+        "crossref_value": "Predicting the Landscape of Recombination Using Deep Learning"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2020",
+        "crossref_value": "2020"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "37",
+        "crossref_value": "37"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1790--1808",
+        "crossref_value": "1790-1808"
+      }
+    ]
+  },
+  {
+    "ref_num": 39,
+    "key": "battey2021visualizing",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Visualizing population structure with variational autoencoders",
+        "crossref_value": "Visualizing Population Structure with Variational Autoencoders"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2021",
+        "crossref_value": "2020"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "11",
+        "crossref_value": ""
+      }
+    ]
+  },
+  {
+    "ref_num": 40,
+    "key": "mo2023domain",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Domain-adaptive neural networks improve supervised machine learning based on sim",
+        "crossref_value": "Domain-adaptive neural networks improve supervised machine learning based on sim"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2023",
+        "crossref_value": "2023"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "19",
+        "crossref_value": "19"
+      }
+    ]
+  },
+  {
+    "ref_num": 41,
+    "key": "Radford2018ImprovingLU",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "MISMATCH",
+        "bib_value": "Improving Language Understanding by Generative Pre-Training",
+        "crossref_value": "LoTLIP: Improving Language-Image Pre-training for Long Text Understanding"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2018",
+        "crossref_value": "2024"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "64996-65019"
+      }
+    ]
+  },
+  {
+    "ref_num": 42,
+    "key": "benegas2025dna",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "A DNA language model based on multispecies alignment predicts the effects of gen",
+        "crossref_value": "A DNA language model based on multispecies alignment predicts the effects of gen"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2025",
+        "crossref_value": "2025"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "43"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "1--6",
+        "crossref_value": "1960-1965"
+      }
+    ]
+  },
+  {
+    "ref_num": 43,
+    "key": "brixi2025genome",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Genome modeling and design across all domains of life with Evo 2",
+        "crossref_value": "Genome modeling and design across all domains of life with Evo 2"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2025",
+        "crossref_value": "2025"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "2025--02",
+        "crossref_value": ""
+      }
+    ]
+  },
+  {
+    "ref_num": 44,
+    "key": "10002010map",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "MISMATCH",
+        "bib_value": "A map of human genome variation from population scale sequencing",
+        "crossref_value": "A map of human genome variation from population-scale sequencing"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2010",
+        "crossref_value": "2010"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "467",
+        "crossref_value": "467"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1061",
+        "crossref_value": "1061-1073"
+      }
+    ]
+  },
+  {
+    "ref_num": 45,
+    "key": "auton20151000",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "The 1000 Genomes Project",
+        "crossref_value": "1000 Genomes project"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2015",
+        "crossref_value": "2008"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "26"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "71--85",
+        "crossref_value": "256-256"
+      }
+    ]
+  },
+  {
+    "ref_num": 46,
+    "key": "anopheles2017genetic",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Genetic diversity of the African malaria vector Anopheles gambiae",
+        "crossref_value": "Genetic diversity of the African malaria vector Anopheles gambiae"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2017",
+        "crossref_value": "2017"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "552",
+        "crossref_value": "552"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "96",
+        "crossref_value": "96-100"
+      }
+    ]
+  },
+  {
+    "ref_num": 47,
+    "key": "clarkson2020genome",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Genome variation and population structure among 1142 mosquitoes of the African m",
+        "crossref_value": "Genome variation and population structure among 1142 mosquitoes of the African m"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2020",
+        "crossref_value": "2020"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "30",
+        "crossref_value": "30"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1533--1546",
+        "crossref_value": "1533-1546"
+      }
+    ]
+  },
+  {
+    "ref_num": 48,
+    "key": "deng2025general",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "A General Framework for Branch Length Estimation in Ancestral Recombination Grap",
+        "crossref_value": "A general framework for branch length estimation in Ancestral Recombination Grap"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2025",
+        "crossref_value": "2025"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "122"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "2025--02",
+        "crossref_value": "e2504461122"
+      }
+    ]
+  },
+  {
+    "ref_num": 49,
+    "key": "grau2020evolution",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Evolution of the insecticide target Rdl in African Anopheles is driven by inters",
+        "crossref_value": "Evolution of the Insecticide Target Rdl in African Anopheles Is Driven by Inters"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2020",
+        "crossref_value": "2020"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "37",
+        "crossref_value": "37"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "2900--2917",
+        "crossref_value": "2900-2917"
+      }
+    ]
+  },
+  {
+    "ref_num": 50,
+    "key": "swallow2003genetics",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Genetics of lactase persistence and lactose intolerance",
+        "crossref_value": "Genetics of Lactase Persistence and Lactose Intolerance"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2003",
+        "crossref_value": "2003"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "37",
+        "crossref_value": "37"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "197--219",
+        "crossref_value": "197-219"
+      }
+    ]
+  },
+  {
+    "ref_num": 51,
+    "key": "tishkoff2007convergent",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Convergent adaptation of human lactase persistence in Africa and Europe",
+        "crossref_value": "Convergent adaptation of human lactase persistence in Africa and Europe"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2007",
+        "crossref_value": "2007"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "39",
+        "crossref_value": "39"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "31--40",
+        "crossref_value": "31-40"
+      }
+    ]
+  },
+  {
+    "ref_num": 52,
+    "key": "bersaglieri2004genetic",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Genetic signatures of strong recent positive selection at the lactase gene",
+        "crossref_value": "Genetic Signatures of Strong Recent Positive Selection at the Lactase Gene"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2004",
+        "crossref_value": "2004"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "74",
+        "crossref_value": "74"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1111--1120",
+        "crossref_value": "1111-1120"
+      }
+    ]
+  },
+  {
+    "ref_num": 53,
+    "key": "itan2009origins",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "The origins of lactase persistence in Europe",
+        "crossref_value": "The Origins of Lactase Persistence in Europe"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2009",
+        "crossref_value": "2009"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "5",
+        "crossref_value": "5"
+      }
+    ]
+  },
+  {
+    "ref_num": 54,
+    "key": "peter2012distinguishing",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Distinguishing between selective sweeps from standing variation and from a de no",
+        "crossref_value": "Distinguishing between Selective Sweeps from Standing Variation and from a De No"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2012",
+        "crossref_value": "2012"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "8",
+        "crossref_value": "8"
+      }
+    ]
+  },
+  {
+    "ref_num": 55,
+    "key": "hedrick1998balancing",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Balancing selection and MHC",
+        "crossref_value": "Balancing selection and MHC"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1998",
+        "crossref_value": "1998"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "104",
+        "crossref_value": "104"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "207--214",
+        "crossref_value": "207-214"
+      }
+    ]
+  },
+  {
+    "ref_num": 56,
+    "key": "azevedo2015trans",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Trans-species polymorphism in humans and the great apes is generally maintained ",
+        "crossref_value": "Trans-species polymorphism in humans and the great apes is generally maintained "
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2015",
+        "crossref_value": "2015"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "9",
+        "crossref_value": "9"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "21",
+        "crossref_value": "21"
+      }
+    ]
+  },
+  {
+    "ref_num": 57,
+    "key": "fortier2025ancient",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Ancient trans-species polymorphism at the major histocompatibility complex in pr",
+        "crossref_value": "Ancient Trans-Species Polymorphism at the Major Histocompatibility Complex in Pr"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2025",
+        "crossref_value": "2022"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "14",
+        "crossref_value": ""
+      }
+    ]
+  },
+  {
+    "ref_num": 58,
+    "key": "love2016chromosomal",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "MISMATCH",
+        "bib_value": "Chromosomal inversions and ecotypic differentiation in Anopheles gambiae: the pe",
+        "crossref_value": "Chromosomal inversions and ecotypic differentiation in <i>Anopheles gambiae</i>:"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2016",
+        "crossref_value": "2016"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "25",
+        "crossref_value": "25"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "5889--5906",
+        "crossref_value": "5889-5906"
+      }
+    ]
+  },
+  {
+    "ref_num": 59,
+    "key": "fontaine2015extensive",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Extensive introgression in a malaria vector species complex revealed by phylogen",
+        "crossref_value": "Extensive introgression in a malaria vector species complex revealed by phylogen"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2015",
+        "crossref_value": "2015"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "347",
+        "crossref_value": "347"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1258524",
+        "crossref_value": "1258524"
+      }
+    ]
+  },
+  {
+    "ref_num": 60,
+    "key": "ffrench1993point",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "A point mutation in a Drosophila GABA receptor confers insecticide resistance",
+        "crossref_value": "A point mutation in a Drosophila GABA receptor confers insecticide resistance"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1993",
+        "crossref_value": "1993"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "363",
+        "crossref_value": "363"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "449--451",
+        "crossref_value": "449-451"
+      }
+    ]
+  },
+  {
+    "ref_num": 61,
+    "key": "thompson1993conservation",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "MISMATCH",
+        "bib_value": "Conservation of cyclodiene insecticide resistance-associated mutations in insect",
+        "crossref_value": "Conservation of cyclodiene insecticide resistance\u2010associated mutations in insect"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1993",
+        "crossref_value": "1993"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "2",
+        "crossref_value": "2"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "149--154",
+        "crossref_value": "149-154"
+      }
+    ]
+  },
+  {
+    "ref_num": 62,
+    "key": "du2005independent",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "MISMATCH",
+        "bib_value": "Independent mutations in the Rdl locus confer dieldrin resistance to Anopheles g",
+        "crossref_value": "Independent mutations in the\n                    <i>Rdl</i>\n                    "
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "2005",
+        "crossref_value": "2005"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "14",
+        "crossref_value": "14"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "179--183",
+        "crossref_value": "179-183"
+      }
+    ]
+  },
+  {
+    "ref_num": 63,
+    "key": "elliott1956insecticide",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Insecticide resistance in Anopheles gambiae Giles",
+        "crossref_value": "Insecticide Resistance in Anopheles gambiae Giles"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1956",
+        "crossref_value": "1956"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "177",
+        "crossref_value": "177"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "532--533",
+        "crossref_value": "532-533"
+      }
+    ]
+  },
+  {
+    "ref_num": 64,
+    "key": "davidson1962case",
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "A case of dominant dieldrin resistance in Anopheles gambiae Giles",
+        "crossref_value": "A Case of Dominant Dieldrin Resistance in Anopheles gambiae Giles"
+      },
+      {
+        "field": "year",
+        "status": "ok",
+        "bib_value": "1962",
+        "crossref_value": "1962"
+      },
+      {
+        "field": "volume",
+        "status": "ok",
+        "bib_value": "196",
+        "crossref_value": "196"
+      },
+      {
+        "field": "pages",
+        "status": "ok",
+        "bib_value": "1012--1012",
+        "crossref_value": "1012-1012"
+      }
+    ]
+  },
+  {
+    "ref_num": 65,
+    "key": "radford_language_2019",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "MISMATCH",
+        "bib_value": "Language Models are Unsupervised Multitask Learners",
+        "crossref_value": "Instruction Pre-Training: Language Models are Supervised Multitask Learners"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2019",
+        "crossref_value": "2024"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "2529-2550"
+      }
+    ]
+  },
+  {
+    "ref_num": 66,
+    "key": "vaswani_attention_2017",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "Attention Is All You Need",
+        "crossref_value": "Attention Is All You Need"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2017",
+        "crossref_value": "2025"
+      },
+      {
+        "field": "doi",
+        "status": "MISMATCH",
+        "bib_value": "10.48550/arxiv.1706.03762",
+        "crossref_value": "10.65215/nxvz2v36"
+      }
+    ]
+  },
+  {
+    "ref_num": 67,
+    "key": "su_roformer_2023",
+    "status": "MISMATCH",
+    "checks": [
+      {
+        "field": "title",
+        "status": "ok",
+        "bib_value": "RoFormer: Enhanced Transformer with Rotary Position Embedding",
+        "crossref_value": "RoFormer: Enhanced transformer with Rotary Position Embedding"
+      },
+      {
+        "field": "year",
+        "status": "MISMATCH",
+        "bib_value": "2023",
+        "crossref_value": "2024"
+      },
+      {
+        "field": "volume",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "568"
+      },
+      {
+        "field": "pages",
+        "status": "MISMATCH",
+        "bib_value": "",
+        "crossref_value": "127063"
+      },
+      {
+        "field": "doi",
+        "status": "MISMATCH",
+        "bib_value": "10.48550/arxiv.2104.09864",
+        "crossref_value": "10.1016/j.neucom.2023.127063"
+      }
+    ]
+  }
+]

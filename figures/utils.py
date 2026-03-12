@@ -437,8 +437,10 @@ def analyze_ts_with_smcpp_multi(
         shutil.rmtree(tmp_dir)
     os.makedirs(tmp_dir, exist_ok=True)
 
+    container_exe = _which_container()
+
     def _sing(*args, cwd=None):
-        cmd = ["singularity", "run", "--bind", os.path.abspath(tmp_dir), sif_path, *args]
+        cmd = [container_exe, "run", "--bind", os.path.abspath(tmp_dir), sif_path, *args]
         subprocess.run(cmd, check=True, cwd=cwd)
 
     vcf = os.path.join(tmp_dir, "data.vcf")
